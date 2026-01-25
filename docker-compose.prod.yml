@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7
+    container_name: lixi-mongodb
+    restart: unless-stopped
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongodb-backup:/backup
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+    networks:
+      - lixi-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Remove port mapping in production for security
+    # ports:
+    #   - "27017:27017"
+
+  # Backend API
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: lixi-backend
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://${MONGO_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD}@mongodb:27017/lixi-app?authSource=admin
+      - JWT_SECRET=${JWT_SECRET}
+      - PORT=3001
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - lixi-network
+    # Remove port mapping, only accessible via nginx
+    # ports:
+    #   - "3001:3001"
+
+  # Frontend
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=${VITE_API_URL}
+    container_name: lixi-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+    networks:
+      - lixi-network
+    volumes:
+      - ./ssl:/etc/nginx/ssl:ro  # For SSL certificates if using HTTPS
+
+networks:
+  lixi-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:

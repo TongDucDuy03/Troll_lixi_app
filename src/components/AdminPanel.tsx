@@ -1,21 +1,26 @@
 import { useState } from 'react';
 import { useGame } from '../context/GameContext';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Lock, Unlock, Plus, Minus, RefreshCw, Shield, Skull } from 'lucide-react';
+import { Lock, Unlock, RefreshCw, Shield, Skull, DollarSign } from 'lucide-react';
+import { ROLES, RoleId, ALL_DENOMINATIONS } from '../types';
 
 export const AdminPanel = () => {
   const {
     state,
+    userName,
     adminLogin,
     adminLogout,
-    updateDenominationQuantity,
+    updateRoleDenominationQuantity,
     setRiggingMode,
-    resetInventory,
+    resetRoleInventory,
     getTotalMoneyInSystem,
+    getRoleBudget,
   } = useGame();
 
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
+  const [mainTab, setMainTab] = useState<'budget' | 'rigging'>('budget');
+  const [selectedRoleTab, setSelectedRoleTab] = useState<RoleId>('kids');
   const [riggingTab, setRiggingTab] = useState<'honest' | 'force' | 'troll'>('honest');
   const [forceValue, setForceValue] = useState(20000);
   const [trollFake, setTrollFake] = useState(500000);
@@ -53,6 +58,18 @@ export const AdminPanel = () => {
     }
   };
 
+  const getRoleInventory = (roleId: RoleId) => {
+    return state.roleInventories[roleId] || [];
+  };
+
+  const getAvailableDenominationsForRole = (roleId: RoleId) => {
+    const roleInv = getRoleInventory(roleId);
+    return ALL_DENOMINATIONS.map((value) => {
+      const existing = roleInv.find((d) => d.value === value);
+      return existing || { value, quantity: 0, initial_quantity: 0 };
+    });
+  };
+
   if (!state.isAdminAuthenticated) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-900 via-black to-red-900 flex items-center justify-center p-4">
@@ -65,7 +82,7 @@ export const AdminPanel = () => {
             <Lock className="text-red-500 w-16 h-16" />
           </div>
           <h1 className="text-3xl font-bold text-center text-red-500 mb-2">
-            ADMIN DUY ONLY
+            ADMIN PANEL
           </h1>
           <p className="text-gray-400 text-center mb-6">
             Cổng Chế Troll Bí Mật
@@ -99,14 +116,14 @@ export const AdminPanel = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-red-950 to-black p-4">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-4xl font-bold text-yellow-400 flex items-center gap-3">
               <Shield className="w-10 h-10" />
               ADMIN CONTROL CENTER
             </h1>
-            <p className="text-gray-400 mt-1">Welcome back, Duy the Puppet Master</p>
+            <p className="text-gray-400 mt-1">Welcome back, {userName || 'Admin'}</p>
           </div>
           <button
             onClick={adminLogout}
@@ -117,206 +134,285 @@ export const AdminPanel = () => {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <motion.div
-            initial={{ x: -20, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            className="bg-black/50 backdrop-blur-lg border-2 border-yellow-500 rounded-xl p-6"
+        {/* Main Tab Switcher */}
+        <div className="flex gap-2 mb-6">
+          <button
+            onClick={() => setMainTab('budget')}
+            className={`flex-1 py-3 rounded-lg font-bold transition-colors flex items-center justify-center gap-2 ${
+              mainTab === 'budget'
+                ? 'bg-yellow-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
           >
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold text-yellow-400">💰 INVENTORY</h2>
-              <div className="text-right">
-                <p className="text-gray-400 text-sm">Total in System:</p>
-                <p className="text-green-400 font-bold text-xl">
-                  {formatFullMoney(getTotalMoneyInSystem())}
-                </p>
-              </div>
-            </div>
-            <div className="space-y-3">
-              {state.denominations.map((denom) => (
-                <div
-                  key={denom.value}
-                  className="bg-gray-900/50 border border-gray-700 rounded-lg p-4 flex items-center justify-between"
-                >
-                  <div className="flex-1">
-                    <p className="text-white font-bold text-lg">
-                      {formatFullMoney(denom.value)}
-                    </p>
-                    <p className="text-gray-400 text-sm">
-                      Stock: {denom.quantity} / {denom.initial_quantity}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => updateDenominationQuantity(denom.value, -1)}
-                      className="bg-red-600 hover:bg-red-700 p-2 rounded-lg transition-colors"
-                      disabled={denom.quantity === 0}
-                    >
-                      <Minus className="w-4 h-4 text-white" />
-                    </button>
-                    <span className="text-white font-bold text-xl w-12 text-center">
-                      {denom.quantity}
-                    </span>
-                    <button
-                      onClick={() => updateDenominationQuantity(denom.value, 1)}
-                      className="bg-green-600 hover:bg-green-700 p-2 rounded-lg transition-colors"
-                    >
-                      <Plus className="w-4 h-4 text-white" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <button
-              onClick={resetInventory}
-              className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
-            >
-              <RefreshCw className="w-5 h-5" />
-              RESET TO INITIAL
-            </button>
-          </motion.div>
-
-          <motion.div
-            initial={{ x: 20, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            className="bg-black/50 backdrop-blur-lg border-2 border-red-500 rounded-xl p-6"
+            <DollarSign className="w-5 h-5" />
+            Budget Manager
+          </button>
+          <button
+            onClick={() => setMainTab('rigging')}
+            className={`flex-1 py-3 rounded-lg font-bold transition-colors flex items-center justify-center gap-2 ${
+              mainTab === 'rigging'
+                ? 'bg-red-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
           >
-            <h2 className="text-2xl font-bold text-red-400 mb-4 flex items-center gap-2">
-              <Skull className="w-8 h-8" />
-              RIGGING CONSOLE
-            </h2>
-            <p className="text-gray-400 text-sm mb-4">
-              Control the fate of the next spin victim...
-            </p>
-
-            <div className="flex gap-2 mb-4">
-              {(['honest', 'force', 'troll'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setRiggingTab(tab)}
-                  className={`flex-1 py-2 rounded-lg font-bold transition-colors ${
-                    riggingTab === tab
-                      ? 'bg-red-600 text-white'
-                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                  }`}
-                >
-                  {tab === 'honest' && '😇 Honest'}
-                  {tab === 'force' && '🎯 Force'}
-                  {tab === 'troll' && '😈 Troll'}
-                </button>
-              ))}
-            </div>
-
-            <AnimatePresence mode="wait">
-              {riggingTab === 'honest' && (
-                <motion.div
-                  key="honest"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="bg-gray-900/50 rounded-lg p-4"
-                >
-                  <p className="text-green-400 text-center">
-                    Random spin based on remaining stock weights.
-                    <br />
-                    <span className="text-gray-500 text-sm">(Boring but fair)</span>
-                  </p>
-                </motion.div>
-              )}
-
-              {riggingTab === 'force' && (
-                <motion.div
-                  key="force"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="bg-gray-900/50 rounded-lg p-4 space-y-3"
-                >
-                  <p className="text-yellow-400 text-sm">
-                    Next person will DEFINITELY get this value:
-                  </p>
-                  <select
-                    value={forceValue}
-                    onChange={(e) => setForceValue(Number(e.target.value))}
-                    className="w-full bg-gray-800 border-2 border-yellow-500 text-white rounded-lg px-4 py-2 font-bold"
-                  >
-                    {state.denominations
-                      .filter((d) => d.quantity > 0)
-                      .map((d) => (
-                        <option key={d.value} value={d.value}>
-                          {formatFullMoney(d.value)} (Stock: {d.quantity})
-                        </option>
-                      ))}
-                  </select>
-                </motion.div>
-              )}
-
-              {riggingTab === 'troll' && (
-                <motion.div
-                  key="troll"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="bg-gray-900/50 rounded-lg p-4 space-y-3"
-                >
-                  <div>
-                    <p className="text-purple-400 text-sm mb-2">
-                      🎭 FAKE: Show this at first:
-                    </p>
-                    <select
-                      value={trollFake}
-                      onChange={(e) => setTrollFake(Number(e.target.value))}
-                      className="w-full bg-gray-800 border-2 border-purple-500 text-white rounded-lg px-4 py-2 font-bold"
-                    >
-                      {state.denominations.map((d) => (
-                        <option key={d.value} value={d.value}>
-                          {formatFullMoney(d.value)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="text-center text-red-400 font-bold text-2xl">⬇️</div>
-                  <div>
-                    <p className="text-red-400 text-sm mb-2">
-                      💀 REAL: Actually give them:
-                    </p>
-                    <select
-                      value={trollReal}
-                      onChange={(e) => setTrollReal(Number(e.target.value))}
-                      className="w-full bg-gray-800 border-2 border-red-500 text-white rounded-lg px-4 py-2 font-bold"
-                    >
-                      {state.denominations
-                        .filter((d) => d.quantity > 0)
-                        .map((d) => (
-                          <option key={d.value} value={d.value}>
-                            {formatFullMoney(d.value)} (Stock: {d.quantity})
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <button
-              onClick={applyRigging}
-              className="w-full mt-4 bg-gradient-to-r from-red-600 to-purple-600 hover:from-red-700 hover:to-purple-700 text-white font-bold py-4 rounded-lg transition-all text-lg"
-            >
-              🎯 APPLY TO NEXT SPIN
-            </button>
-
-            <div className="mt-4 bg-yellow-900/30 border border-yellow-500/50 rounded-lg p-3">
-              <p className="text-yellow-400 text-xs">
-                <strong>Current Mode:</strong> {state.riggingConfig.next_spin_mode === 'random' ? '😇 Honest Random' : state.riggingConfig.next_spin_mode === 'force_value' ? '🎯 Forced Value' : '😈 Troll Mode'}
-              </p>
-            </div>
-          </motion.div>
+            <Skull className="w-5 h-5" />
+            Rigging Console
+          </button>
         </div>
 
+        <AnimatePresence mode="wait">
+          {mainTab === 'budget' && (
+            <motion.div
+              key="budget"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="bg-black/50 backdrop-blur-lg border-2 border-yellow-500 rounded-xl p-6"
+            >
+              {/* Grand Total */}
+              <div className="mb-6 bg-gradient-to-r from-green-900/50 to-blue-900/50 border-2 border-green-500 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl font-bold text-green-400">💰 TOTAL CAMPAIGN BUDGET</h2>
+                  <p className="text-green-400 font-bold text-3xl">
+                    {formatFullMoney(getTotalMoneyInSystem())}
+                  </p>
+                </div>
+              </div>
+
+              {/* Role Tabs */}
+              <div className="flex gap-2 mb-4 overflow-x-auto">
+                {ROLES.map((role) => (
+                  <button
+                    key={role.id}
+                    onClick={() => setSelectedRoleTab(role.id)}
+                    className={`px-4 py-2 rounded-lg font-bold transition-colors whitespace-nowrap ${
+                      selectedRoleTab === role.id
+                        ? 'bg-yellow-600 text-white'
+                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                    }`}
+                  >
+                    {role.name}
+                  </button>
+                ))}
+              </div>
+
+              {/* Role Budget Content */}
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={selectedRoleTab}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="bg-gray-900/50 rounded-lg p-6"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xl font-bold text-yellow-400">
+                      Budget cho: {ROLES.find((r) => r.id === selectedRoleTab)?.name}
+                    </h3>
+                    <div className="text-right">
+                      <p className="text-gray-400 text-sm">Total Budget:</p>
+                      <p className="text-yellow-400 font-bold text-xl">
+                        {formatFullMoney(getRoleBudget(selectedRoleTab))}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {getAvailableDenominationsForRole(selectedRoleTab).map((denom) => {
+                      const currentQuantity = denom.quantity;
+                      return (
+                        <div
+                          key={denom.value}
+                          className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 flex items-center justify-between"
+                        >
+                          <div className="flex-1">
+                            <p className="text-white font-bold text-lg">
+                              {formatFullMoney(denom.value)}
+                            </p>
+                            <p className="text-gray-400 text-sm">
+                              Quantity: {currentQuantity}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="number"
+                              min="0"
+                              value={currentQuantity}
+                              onChange={(e) => {
+                                const newQuantity = parseInt(e.target.value) || 0;
+                                updateRoleDenominationQuantity(
+                                  selectedRoleTab,
+                                  denom.value,
+                                  newQuantity
+                                );
+                              }}
+                              className="w-24 bg-gray-900 border-2 border-yellow-500 rounded-lg px-3 py-2 text-white text-center font-bold focus:outline-none focus:border-yellow-300"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    onClick={() => resetRoleInventory(selectedRoleTab)}
+                    className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
+                  >
+                    <RefreshCw className="w-5 h-5" />
+                    RESET {ROLES.find((r) => r.id === selectedRoleTab)?.name.toUpperCase()} TO INITIAL
+                  </button>
+                </motion.div>
+              </AnimatePresence>
+            </motion.div>
+          )}
+
+          {mainTab === 'rigging' && (
+            <motion.div
+              key="rigging"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="bg-black/50 backdrop-blur-lg border-2 border-red-500 rounded-xl p-6"
+            >
+              <h2 className="text-2xl font-bold text-red-400 mb-4 flex items-center gap-2">
+                <Skull className="w-8 h-8" />
+                RIGGING CONSOLE
+              </h2>
+              <p className="text-gray-400 text-sm mb-4">
+                Control the fate of the next spin victim...
+              </p>
+
+              <div className="flex gap-2 mb-4">
+                {(['honest', 'force', 'troll'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setRiggingTab(tab)}
+                    className={`flex-1 py-2 rounded-lg font-bold transition-colors ${
+                      riggingTab === tab
+                        ? 'bg-red-600 text-white'
+                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                    }`}
+                  >
+                    {tab === 'honest' && '😇 Honest'}
+                    {tab === 'force' && '🎯 Force'}
+                    {tab === 'troll' && '😈 Troll'}
+                  </button>
+                ))}
+              </div>
+
+              <AnimatePresence mode="wait">
+                {riggingTab === 'honest' && (
+                  <motion.div
+                    key="honest"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="bg-gray-900/50 rounded-lg p-4"
+                  >
+                    <p className="text-green-400 text-center">
+                      Random spin based on remaining stock weights.
+                      <br />
+                      <span className="text-gray-500 text-sm">(Boring but fair)</span>
+                    </p>
+                  </motion.div>
+                )}
+
+                {riggingTab === 'force' && (
+                  <motion.div
+                    key="force"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="bg-gray-900/50 rounded-lg p-4 space-y-3"
+                  >
+                    <p className="text-yellow-400 text-sm">
+                      Next person will DEFINITELY get this value:
+                    </p>
+                    <select
+                      value={forceValue}
+                      onChange={(e) => setForceValue(Number(e.target.value))}
+                      className="w-full bg-gray-800 border-2 border-yellow-500 text-white rounded-lg px-4 py-2 font-bold"
+                    >
+                      {ALL_DENOMINATIONS.map((value) => (
+                        <option key={value} value={value}>
+                          {formatFullMoney(value)}
+                        </option>
+                      ))}
+                    </select>
+                  </motion.div>
+                )}
+
+                {riggingTab === 'troll' && (
+                  <motion.div
+                    key="troll"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="bg-gray-900/50 rounded-lg p-4 space-y-3"
+                  >
+                    <div>
+                      <p className="text-purple-400 text-sm mb-2">
+                        🎭 FAKE: Show this at first:
+                      </p>
+                      <select
+                        value={trollFake}
+                        onChange={(e) => setTrollFake(Number(e.target.value))}
+                        className="w-full bg-gray-800 border-2 border-purple-500 text-white rounded-lg px-4 py-2 font-bold"
+                      >
+                        {ALL_DENOMINATIONS.map((value) => (
+                          <option key={value} value={value}>
+                            {formatFullMoney(value)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="text-center text-red-400 font-bold text-2xl">⬇️</div>
+                    <div>
+                      <p className="text-red-400 text-sm mb-2">
+                        💀 REAL: Actually give them:
+                      </p>
+                      <select
+                        value={trollReal}
+                        onChange={(e) => setTrollReal(Number(e.target.value))}
+                        className="w-full bg-gray-800 border-2 border-red-500 text-white rounded-lg px-4 py-2 font-bold"
+                      >
+                        {ALL_DENOMINATIONS.map((value) => (
+                          <option key={value} value={value}>
+                            {formatFullMoney(value)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <button
+                onClick={applyRigging}
+                className="w-full mt-4 bg-gradient-to-r from-red-600 to-purple-600 hover:from-red-700 hover:to-purple-700 text-white font-bold py-4 rounded-lg transition-all text-lg"
+              >
+                🎯 APPLY TO NEXT SPIN
+              </button>
+
+              <div className="mt-4 bg-yellow-900/30 border border-yellow-500/50 rounded-lg p-3">
+                <p className="text-yellow-400 text-xs">
+                  <strong>Current Mode:</strong>{' '}
+                  {state.riggingConfig.next_spin_mode === 'random'
+                    ? '😇 Honest Random'
+                    : state.riggingConfig.next_spin_mode === 'force_value'
+                    ? '🎯 Forced Value'
+                    : '😈 Troll Mode'}
+                </p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Spin History */}
         <motion.div
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
-          className="bg-black/50 backdrop-blur-lg border-2 border-green-500 rounded-xl p-6"
+          className="bg-black/50 backdrop-blur-lg border-2 border-green-500 rounded-xl p-6 mt-6"
         >
           <h2 className="text-2xl font-bold text-green-400 mb-4">📜 SPIN HISTORY</h2>
           <div className="max-h-96 overflow-y-auto space-y-2">
@@ -331,6 +427,7 @@ export const AdminPanel = () => {
                   <div>
                     <p className="text-white font-bold">{log.user_name || 'Anonymous'}</p>
                     <p className="text-gray-400 text-sm">
+                      {log.role_id && ROLES.find((r) => r.id === log.role_id)?.name} •{' '}
                       {new Date(log.timestamp).toLocaleString('vi-VN')}
                     </p>
                   </div>

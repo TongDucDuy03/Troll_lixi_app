@@ -1,20 +1,28 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { GameState, Denomination, SpinHistory, RiggingConfig, RiggingMode } from '../types';
+import { gameAPI } from '../utils/api';
+import { GameState, Denomination, SpinHistory, RiggingConfig, RiggingMode, RoleId, ROLES, RoleInventory, ALL_DENOMINATIONS } from '../types';
 
-const STORAGE_KEY = 'tet-lucky-money-data';
 const ADMIN_PIN = '1234';
 
-const initialDenominations: Denomination[] = [
-  { value: 10000, quantity: 20, initial_quantity: 20 },
-  { value: 20000, quantity: 15, initial_quantity: 15 },
-  { value: 50000, quantity: 10, initial_quantity: 10 },
-  { value: 100000, quantity: 8, initial_quantity: 8 },
-  { value: 200000, quantity: 5, initial_quantity: 5 },
-  { value: 500000, quantity: 2, initial_quantity: 2 },
-];
+// Default initial quantities per role (can be customized in admin)
+const getDefaultRoleInventory = (): Denomination[] => {
+  return ALL_DENOMINATIONS.map((value) => ({
+    value,
+    quantity: 0,
+    initial_quantity: 0,
+  }));
+};
+
+const createInitialRoleInventories = (): RoleInventory => {
+  const inventories: RoleInventory = {};
+  ROLES.forEach((role) => {
+    inventories[role.id] = getDefaultRoleInventory();
+  });
+  return inventories;
+};
 
 const initialState: GameState = {
-  denominations: initialDenominations,
+  roleInventories: createInitialRoleInventories(),
   spinHistory: [],
   riggingConfig: {
     next_spin_mode: 'random',
@@ -26,13 +34,15 @@ const initialState: GameState = {
 
 interface GameContextType {
   state: GameState;
+  userName: string;
   adminLogin: (pin: string) => boolean;
   adminLogout: () => void;
-  updateDenominationQuantity: (value: number, delta: number) => void;
+  updateRoleDenominationQuantity: (roleId: RoleId, value: number, quantity: number) => void;
   setRiggingMode: (mode: RiggingMode, targetValue?: number, fakeValue?: number) => void;
-  performSpin: (userName: string) => SpinResult;
-  resetInventory: () => void;
+  performSpin: (userName: string, roleId: RoleId) => SpinResult;
+  resetRoleInventory: (roleId: RoleId) => void;
   getTotalMoneyInSystem: () => number;
+  getRoleBudget: (roleId: RoleId) => number;
 }
 
 export interface SpinResult {
@@ -41,28 +51,56 @@ export interface SpinResult {
   scenario: string;
   isTroll: boolean;
   isEmpty: boolean;
+  requiresReSpin?: boolean;
 }
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
 
-export const GameProvider = ({ children }: { children: ReactNode }) => {
-  const [state, setState] = useState<GameState>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        return { ...parsed, isAdminAuthenticated: false };
-      } catch {
-        return initialState;
-      }
-    }
-    return initialState;
-  });
+export const GameProvider = ({ children, userId, userName }: { children: ReactNode; userId: string; userName: string }) => {
+  const [state, setState] = useState<GameState>(initialState);
+  const [loading, setLoading] = useState(true);
 
+  // Load game state from API on mount
   useEffect(() => {
-    const toSave = { ...state, isAdminAuthenticated: false };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
-  }, [state]);
+    if (!userId) return;
+
+    const loadGameState = async () => {
+      try {
+        const data = await gameAPI.getState();
+        setState({
+          roleInventories: data.roleInventories || createInitialRoleInventories(),
+          spinHistory: [], // We'll load history separately if needed
+          riggingConfig: data.riggingConfig || initialState.riggingConfig,
+          isAdminAuthenticated: false,
+        });
+        setLoading(false);
+      } catch (error) {
+        console.error('Error loading game state:', error);
+        // If error, use initial state
+        setState(initialState);
+        setLoading(false);
+      }
+    };
+
+    loadGameState();
+  }, [userId]);
+
+  // Save game state to API whenever it changes (debounced)
+  useEffect(() => {
+    if (!userId || loading) return;
+
+    const saveGameState = async () => {
+      try {
+        await gameAPI.updateState(state.roleInventories, state.riggingConfig);
+      } catch (error) {
+        console.error('Error saving game state:', error);
+      }
+    };
+
+    // Debounce saves to avoid too many writes
+    const timeoutId = setTimeout(saveGameState, 500);
+    return () => clearTimeout(timeoutId);
+  }, [state.roleInventories, state.riggingConfig, userId, loading]);
 
   const adminLogin = (pin: string): boolean => {
     if (pin === ADMIN_PIN) {
@@ -76,15 +114,29 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setState((prev) => ({ ...prev, isAdminAuthenticated: false }));
   };
 
-  const updateDenominationQuantity = (value: number, delta: number) => {
-    setState((prev) => ({
-      ...prev,
-      denominations: prev.denominations.map((d) =>
+  const updateRoleDenominationQuantity = (roleId: RoleId, value: number, quantity: number) => {
+    setState((prev) => {
+      const roleInv = prev.roleInventories[roleId] || [];
+      const updatedRoleInv = roleInv.map((d) =>
         d.value === value
-          ? { ...d, quantity: Math.max(0, d.quantity + delta) }
+          ? { ...d, quantity: Math.max(0, quantity), initial_quantity: Math.max(0, quantity) }
           : d
-      ),
-    }));
+      );
+      
+      // If denomination doesn't exist, add it
+      if (!updatedRoleInv.find((d) => d.value === value)) {
+        updatedRoleInv.push({ value, quantity: Math.max(0, quantity), initial_quantity: Math.max(0, quantity) });
+        updatedRoleInv.sort((a, b) => a.value - b.value);
+      }
+
+      return {
+        ...prev,
+        roleInventories: {
+          ...prev.roleInventories,
+          [roleId]: updatedRoleInv,
+        },
+      };
+    });
   };
 
   const setRiggingMode = (mode: RiggingMode, targetValue?: number, fakeValue?: number) => {
@@ -98,24 +150,33 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     }));
   };
 
-  const performSpin = (userName: string): SpinResult => {
-    const { denominations, riggingConfig } = state;
+  const performSpin = (userName: string, roleId: RoleId): SpinResult => {
+    const { roleInventories, riggingConfig } = state;
+    const roleInventory = roleInventories[roleId] || [];
 
-    const availableDenoms = denominations.filter((d) => d.quantity > 0);
+    const availableDenoms = roleInventory.filter((d) => d.quantity > 0);
 
     if (availableDenoms.length === 0) {
       const history: SpinHistory = {
         id: Date.now().toString(),
         timestamp: Date.now(),
         user_name: userName,
+        role_id: roleId,
         display_value: 0,
         real_value: 0,
         scenario_used: 'empty',
       };
-      setState((prev) => ({
-        ...prev,
-        spinHistory: [history, ...prev.spinHistory],
-      }));
+      
+      // Save to API
+      gameAPI.addSpinHistory({
+        timestamp: history.timestamp,
+        userName: history.user_name,
+        roleId: history.role_id,
+        displayValue: history.display_value,
+        realValue: history.real_value,
+        scenarioUsed: history.scenario_used,
+      }).catch(err => console.error('Error saving spin history:', err));
+
       return {
         displayValue: 0,
         realValue: 0,
@@ -163,8 +224,12 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       scenario = 'random';
     }
 
+    // Check if this triggers a re-spin (1k or 2k for Kids or Younger roles)
+    const requiresReSpin = (roleId === 'kids' || roleId === 'younger') && (realValue === 1000 || realValue === 2000);
+
     setState((prev) => {
-      const newDenominations = prev.denominations.map((d) =>
+      const roleInv = prev.roleInventories[roleId] || [];
+      const newRoleInv = roleInv.map((d) =>
         d.value === realValue ? { ...d, quantity: d.quantity - 1 } : d
       );
 
@@ -172,14 +237,28 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         id: Date.now().toString(),
         timestamp: Date.now(),
         user_name: userName,
+        role_id: roleId,
         display_value: displayValue,
         real_value: realValue,
         scenario_used: scenario,
       };
 
+      // Save to API
+      gameAPI.addSpinHistory({
+        timestamp: history.timestamp,
+        userName: history.user_name,
+        roleId: history.role_id,
+        displayValue: history.display_value,
+        realValue: history.real_value,
+        scenarioUsed: history.scenario_used,
+      }).catch(err => console.error('Error saving spin history:', err));
+
       return {
         ...prev,
-        denominations: newDenominations,
+        roleInventories: {
+          ...prev.roleInventories,
+          [roleId]: newRoleInv,
+        },
         spinHistory: [history, ...prev.spinHistory],
         riggingConfig: {
           next_spin_mode: 'random',
@@ -195,6 +274,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       scenario,
       isTroll,
       isEmpty: false,
+      requiresReSpin,
     };
   };
 
@@ -212,31 +292,60 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     return denoms[0].value;
   };
 
-  const resetInventory = () => {
-    setState((prev) => ({
-      ...prev,
-      denominations: prev.denominations.map((d) => ({
+  const resetRoleInventory = (roleId: RoleId) => {
+    setState((prev) => {
+      const roleInv = prev.roleInventories[roleId] || [];
+      const resetRoleInv = roleInv.map((d) => ({
         ...d,
         quantity: d.initial_quantity,
-      })),
-    }));
+      }));
+
+      return {
+        ...prev,
+        roleInventories: {
+          ...prev.roleInventories,
+          [roleId]: resetRoleInv,
+        },
+      };
+    });
   };
 
   const getTotalMoneyInSystem = (): number => {
-    return state.denominations.reduce((sum, d) => sum + d.value * d.quantity, 0);
+    let total = 0;
+    Object.values(state.roleInventories).forEach((roleInv) => {
+      roleInv.forEach((d) => {
+        total += d.value * d.quantity;
+      });
+    });
+    return total;
   };
+
+  const getRoleBudget = (roleId: RoleId): number => {
+    const roleInv = state.roleInventories[roleId] || [];
+    return roleInv.reduce((sum, d) => sum + d.value * d.quantity, 0);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-700 via-red-800 to-red-900 flex items-center justify-center">
+        <div className="text-yellow-400 text-2xl font-bold">Đang tải dữ liệu...</div>
+      </div>
+    );
+  }
 
   return (
     <GameContext.Provider
       value={{
         state,
+        userName,
         adminLogin,
         adminLogout,
-        updateDenominationQuantity,
+        updateRoleDenominationQuantity,
         setRiggingMode,
         performSpin,
-        resetInventory,
+        resetRoleInventory,
         getTotalMoneyInSystem,
+        getRoleBudget,
       }}
     >
       {children}

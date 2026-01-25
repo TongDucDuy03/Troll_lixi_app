@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useGame } from '../context/GameContext';
 import confetti from 'canvas-confetti';
 import { Sparkles, AlertCircle } from 'lucide-react';
+import { ROLES, RoleId, ALL_DENOMINATIONS } from '../types';
 
 const playSpinSound = () => console.log('🎵 Spin sound');
 const playWinSound = () => console.log('🎵 Win sound');
@@ -10,28 +11,67 @@ const playFailSound = () => console.log('🎵 Fail sound');
 
 const getBillColor = (value: number): string => {
   const colors: { [key: number]: string } = {
-    10000: '#8B4513',
-    20000: '#4169E1',
-    50000: '#FF1493',
-    100000: '#228B22',
-    200000: '#FF6347',
-    500000: '#00CED1',
+    1000: '#FF6B6B',   // Light red
+    2000: '#4ECDC4',   // Teal
+    5000: '#95E1D3',   // Light green
+    10000: '#8B4513',  // Brown
+    20000: '#4169E1',  // Blue
+    50000: '#FF1493',  // Pink
+    100000: '#228B22', // Green
+    200000: '#FF6347', // Tomato
+    500000: '#00CED1', // Dark turquoise
   };
   return colors[value] || '#FFD700';
 };
 
 export const SlotMachine = () => {
-  const { performSpin, state } = useGame();
+  const { performSpin, userName: contextUserName } = useGame();
   const [userName, setUserName] = useState('');
+  const [selectedRole, setSelectedRole] = useState<RoleId | ''>('');
   const [isSpinning, setIsSpinning] = useState(false);
-  const [currentPhase, setCurrentPhase] = useState<'idle' | 'spinning' | 'result' | 'troll' | 'final'>('idle');
+  const [currentPhase, setCurrentPhase] = useState<'idle' | 'spinning' | 'result' | 'troll' | 'final' | 'respin_spinning'>('idle');
   const [displayValue, setDisplayValue] = useState<number>(0);
   const [realValue, setRealValue] = useState<number>(0);
   const [scenario, setScenario] = useState<string>('');
-  const [lastTapTime, setLastTapTime] = useState(0);
-  const tapCountRef = useRef(0);
+  const [reSpinFirstPrize, setReSpinFirstPrize] = useState<number>(0);
+  const [reSpinFinalPrize, setReSpinFinalPrize] = useState<number>(0);
+  const [scratchProgress, setScratchProgress] = useState(0);
+  const [isScratching, setIsScratching] = useState(false);
+  const [scratchRevealed, setScratchRevealed] = useState(false);
+  const [currentResult, setCurrentResult] = useState<any>(null);
+  const [revealTime, setRevealTime] = useState<number | null>(null);
+  const [countdown, setCountdown] = useState(0);
+  const [currentWish, setCurrentWish] = useState('');
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const allDenoms = [10000, 20000, 50000, 100000, 200000, 500000];
+  const WISHES = [
+    "hay ăn chóng lớn",
+    "tiền vào như nước",
+    "sớm có người yêu",
+    "học tập tốt, lao động tốt",
+    "vạn sự như ý",
+    "an khang thịnh vượng",
+    "sức khỏe dồi dào",
+    "lộc lá đầy nhà",
+    "tình duyên phơi phới",
+    "công việc thuận lợi",
+    "đẹp trai/xinh gái hơn",
+    "may mắn cả năm",
+    "thành công rực rỡ",
+    "luôn vui vẻ yêu đời",
+    "sự nghiệp thăng tiến"
+  ];
+
+
+  // Vẽ lớp phủ NGAY khi vừa vào phase spinning/respin_spinning
+  useEffect(() => {
+    if ((currentPhase === 'spinning' || currentPhase === 'respin_spinning') && !scratchRevealed) {
+      // Vẽ lớp phủ ngay khi phase bắt đầu (frame kế tiếp đảm bảo canvas đã mount)
+      requestAnimationFrame(() => {
+        initScratchCard(0); // targetValue không dùng, truyền gì cũng được
+      });
+    }
+  }, [currentPhase, scratchRevealed]);
 
   const formatMoney = (value: number) => {
     return value.toLocaleString('vi-VN') + 'đ';
@@ -70,157 +110,250 @@ export const SlotMachine = () => {
     }
   };
 
-  const handleStealthTap = () => {
-    const now = Date.now();
-    if (now - lastTapTime > 300) {
-      tapCountRef.current = 1;
-    } else {
-      tapCountRef.current++;
-    }
-    setLastTapTime(now);
+  // Reset tất cả state scratch card
+  const resetScratchCardState = () => {
+    setScratchRevealed(false);
+    setScratchProgress(0);
+    setRevealTime(null);
+    setCountdown(0);
+    setIsScratching(false);
+    setDisplayValue(0);
+    setRealValue(0);
+    setCurrentResult(null);
+  };
 
-    if (tapCountRef.current === 2) {
-      const { toggleStealthTrigger } = useGame();
-      toggleStealthTrigger();
-      tapCountRef.current = 0;
+
+  // Scratch Card logic - vẽ lớp phủ ngay lập tức
+  const initScratchCard = (targetValue: number) => {
+    setScratchProgress(0);
+    setScratchRevealed(false);
+    
+    // Reset canvas
+    const canvas = canvasRef.current;
+    if (canvas) {
+      // Set canvas size based on container (fixed size for consistency)
+      const width = 384;
+      const height = 224;
+      canvas.width = width;
+      canvas.height = height;
+      
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        // Clear canvas trước
+        ctx.clearRect(0, 0, width, height);
+        
+        // Vẽ nền vàng với pattern
+        const gradient = ctx.createLinearGradient(0, 0, width, height);
+        gradient.addColorStop(0, '#FFD700');
+        gradient.addColorStop(1, '#FFA500');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+        
+        // Vẽ pattern chấm
+        ctx.fillStyle = '#8B4513';
+        for (let i = 0; i < width; i += 30) {
+          for (let j = 0; j < height; j += 30) {
+            if ((i + j) % 60 === 0) {
+              ctx.beginPath();
+              ctx.arc(i, j, 3, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+        }
+        
+        // Vẽ text "Gãi để xem"
+        ctx.fillStyle = '#8B4513';
+        ctx.font = 'bold 28px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('🧧 Gãi để xem 🧧', width / 2, height / 2);
+        
+        // Vẽ border
+        ctx.strokeStyle = '#FF6347';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(0, 0, width, height);
+      }
     }
   };
 
-  const handleSpin = async () => {
-    if (!userName.trim()) {
+  const handleScratch = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (scratchRevealed) return;
+    
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Tính scale để map từ screen coordinates sang canvas coordinates
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    let x: number, y: number;
+    if ('touches' in e) {
+      x = (e.touches[0].clientX - rect.left) * scaleX;
+      y = (e.touches[0].clientY - rect.top) * scaleY;
+    } else {
+      x = (e.clientX - rect.left) * scaleX;
+      y = (e.clientY - rect.top) * scaleY;
+    }
+    
+    // Vẽ vùng trong suốt (gãi) với brush
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(x, y, 40, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Tính progress bằng cách sample một số điểm
+    const sampleSize = 50;
+    const stepX = canvas.width / sampleSize;
+    const stepY = canvas.height / sampleSize;
+    let transparentCount = 0;
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    
+    for (let i = 0; i < sampleSize; i++) {
+      for (let j = 0; j < sampleSize; j++) {
+        const px = Math.floor(i * stepX);
+        const py = Math.floor(j * stepY);
+        const idx = (py * canvas.width + px) * 4;
+        if (imageData.data[idx + 3] === 0) {
+          transparentCount++;
+        }
+      }
+    }
+    
+    const progress = (transparentCount / (sampleSize * sampleSize)) * 100;
+    setScratchProgress(progress);
+    
+    // Nếu gãi > 85%, reveal kết quả (phải gãi gần hết)
+    if (progress > 85 && !scratchRevealed) {
+      setScratchRevealed(true);
+      setRevealTime(Date.now());
+      
+      const ctx = canvasRef.current?.getContext('2d');
+      if (ctx && canvasRef.current) {
+        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      }
+      
+      if (currentResult?.isEmpty || currentResult?.realValue === 0) {
+        playFailSound();
+      } else {
+        fireConfetti('high');
+        playWinSound();
+      }
+    }
+  };
+
+  // Countdown timer sau khi reveal
+  useEffect(() => {
+    if (scratchRevealed && revealTime) {
+      const delay = 18000; // 18 giây delay
+      const interval = setInterval(() => {
+        const elapsed = Date.now() - revealTime;
+        const remaining = Math.max(0, delay - elapsed);
+        setCountdown(Math.ceil(remaining / 1000));
+        
+        if (remaining <= 0) {
+          clearInterval(interval);
+          // Xử lý kết quả sau delay
+          if (currentResult?.requiresReSpin) {
+            // Chỉ đánh dấu "được phép bấm" bằng countdown = 0
+            setReSpinFirstPrize(currentResult.realValue);
+            setCountdown(0);
+            // Giữ nguyên màn scratch card để hiện nút QUAY TIẾP
+          } else {
+            // Không hiển thị màn hình kết quả, chỉ reset về idle sau countdown
+            setTimeout(() => {
+              setIsSpinning(false);
+              setCurrentPhase('idle');
+              resetScratchCardState();
+            }, 500);
+          }
+        }
+      }, 100);
+      
+      return () => clearInterval(interval);
+    }
+  }, [scratchRevealed, revealTime, currentResult]);
+
+  // Reset state khi user thay đổi tên hoặc role (chuẩn bị cho lượt quay mới)
+  useEffect(() => {
+    if (currentPhase === 'idle' && (userName || selectedRole)) {
+      // Chỉ reset nếu đang ở idle và có input
+      // Không reset nếu đang trong quá trình quay
+    }
+  }, [userName, selectedRole, currentPhase]);
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    setIsScratching(true);
+    handleScratch(e);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isScratching) {
+      handleScratch(e);
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsScratching(false);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    setIsScratching(true);
+    handleScratch(e);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (isScratching) {
+      handleScratch(e);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setIsScratching(false);
+  };
+
+  const handleSpin = async (isReSpin: boolean = false) => {
+    if (!isReSpin && !userName.trim()) {
       alert('Nhập tên đi bạn ơi!');
       return;
     }
 
+    if (!isReSpin && !selectedRole) {
+      alert('Chọn vai trò của bạn!');
+      return;
+    }
+
+    // RESET tất cả state scratch card khi bắt đầu lượt quay mới
+    resetScratchCardState();
+    
+    // Chọn lời chúc ngẫu nhiên
+    const randomWish = WISHES[Math.floor(Math.random() * WISHES.length)];
+    setCurrentWish(randomWish);
+
+    // BƯỚC 1: Tính kết quả TRƯỚC KHI hiển thị scratch card
+    const roleId = (isReSpin ? selectedRole : selectedRole) as RoleId;
+    const result = performSpin(userName.trim(), roleId);
+    setCurrentResult(result);
+    
+    // BƯỚC 2: Hiển thị Scratch Card
     setIsSpinning(true);
-    setCurrentPhase('spinning');
+    setCurrentPhase(isReSpin ? 'respin_spinning' : 'spinning');
     playSpinSound();
 
+    // Khởi tạo scratch card với kết quả
     setTimeout(() => {
-      const result = performSpin(userName.trim());
-
+      // Luôn hiển thị scratch card cho mọi trường hợp (bao gồm cả hết tiền và troll)
       setDisplayValue(result.displayValue);
       setRealValue(result.realValue);
       setScenario(result.scenario);
-
-      if (result.isEmpty) {
-        handleEmptyScenario();
-      } else if (result.isTroll) {
-        handleTrollScenario(result.displayValue, result.realValue);
-      } else {
-        handleNormalScenario(result.realValue);
-      }
-    }, 3000);
+    }, 500);
   };
 
-  const handleEmptyScenario = () => {
-    setCurrentPhase('result');
-    playFailSound();
-    setTimeout(() => {
-      setIsSpinning(false);
-    }, 3000);
-  };
 
-  const handleTrollScenario = (fakeValue: number, actualValue: number) => {
-    setCurrentPhase('result');
-    playWinSound();
-    fireConfetti('high');
 
-    setTimeout(() => {
-      setCurrentPhase('troll');
-      playFailSound();
-    }, 2500);
-
-    setTimeout(() => {
-      setCurrentPhase('final');
-      fireConfetti('low');
-    }, 5000);
-
-    setTimeout(() => {
-      setIsSpinning(false);
-      setCurrentPhase('idle');
-    }, 8000);
-  };
-
-  const handleNormalScenario = (value: number) => {
-    setCurrentPhase('result');
-
-    if (value >= 200000) {
-      playWinSound();
-      fireConfetti('high');
-    } else if (value === 10000) {
-      playFailSound();
-      fireConfetti('low');
-    } else {
-      playWinSound();
-      fireConfetti('medium');
-    }
-
-    setTimeout(() => {
-      setIsSpinning(false);
-      setCurrentPhase('idle');
-    }, 4000);
-  };
-
-  const getScenarioText = () => {
-    if (currentPhase === 'result' && displayValue === 0) {
-      return {
-        title: '💔 HẾT TIỀN RỒI!',
-        subtitle: 'Hệ thống xác nhận: Ví Duy chính thức về 0. Hẹn gặp lại Tết năm sau!',
-        color: 'text-gray-400',
-      };
-    }
-
-    if (currentPhase === 'result' && (scenario === 'troll_fake_to_real' || scenario === 'troll_from_queue')) {
-      return {
-        title: `🎉 TRÚNG ${formatMoney(displayValue)}!!!`,
-        subtitle: 'Duy chính thức phá sản! Xin chúc mừng!!!',
-        color: 'text-yellow-400',
-      };
-    }
-
-    if (currentPhase === 'troll') {
-      return {
-        title: '⚠️ CẬP NHẬT KHẨN!',
-        subtitle: `Update nóng: Duy kiểm tra lại số dư, thấy ví đang khóc. ${formatMoney(displayValue)} xin phép chỉnh nhẹ về ${formatMoney(realValue)} cho hợp phong thủy.`,
-        color: 'text-red-500',
-      };
-    }
-
-    if (currentPhase === 'final') {
-      return {
-        title: `Kết quả chính thức: ${formatMoney(realValue)}`,
-        subtitle: 'Duy xin lỗi vì sự bất tiện này. (Nhưng không hoàn tiền đâu nhé!)',
-        color: 'text-orange-400',
-      };
-    }
-
-    if (currentPhase === 'result') {
-      if (realValue >= 200000) {
-        return {
-          title: `🎊 TRÚNG TO ${formatMoney(realValue)}!!!`,
-          subtitle: 'Duy đang khóc trong toilet! Xin chúc mừng!!!',
-          color: 'text-yellow-400',
-        };
-      } else if (realValue === 10000) {
-        return {
-          title: `${formatMoney(realValue)}`,
-          subtitle: '10k tuy ít nhưng chứa đựng tình cảm... và sự nghèo khó của Admin.',
-          color: 'text-orange-400',
-        };
-      } else {
-        return {
-          title: `🎁 ${formatMoney(realValue)}`,
-          subtitle: 'Chúc mừng! Lộc bất tận hưởng!',
-          color: 'text-green-400',
-        };
-      }
-    }
-
-    return null;
-  };
-
-  const scenarioText = getScenarioText();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-700 via-red-800 to-red-900 flex flex-col items-center justify-center p-4 relative overflow-hidden">
@@ -255,7 +388,7 @@ export const SlotMachine = () => {
           🧧 VÒNG QUAY LÌ XÌ TẾT 🧧
         </h1>
         <p className="text-white/90 text-lg md:text-xl max-w-2xl mx-auto">
-          Quay là có, ít hay nhiều là do... ngân quỹ của Duy.
+          Quay là có, ít hay nhiều là do... ngân quỹ của {contextUserName}.
         </p>
       </motion.div>
 
@@ -272,23 +405,57 @@ export const SlotMachine = () => {
             <input
               type="text"
               value={userName}
-              onChange={(e) => setUserName(e.target.value)}
+              onChange={(e) => {
+                setUserName(e.target.value);
+                // Reset state khi user thay đổi tên (chuẩn bị cho lượt quay mới)
+                if (currentPhase === 'idle') {
+                  resetScratchCardState();
+                }
+              }}
               placeholder="Nhập tên để nhận lì xì..."
-              className="w-full bg-white/10 border-2 border-yellow-400 rounded-lg px-4 py-3 text-white text-lg focus:outline-none focus:border-yellow-300 placeholder-white/50"
+              className="w-full bg-gray-900 border-2 border-yellow-400 rounded-lg px-4 py-3 text-yellow-400 text-lg font-bold focus:outline-none focus:border-yellow-300 placeholder-yellow-400/60"
               disabled={isSpinning}
             />
           </div>
 
+          <div className="mb-6">
+            <label className="block text-yellow-400 font-bold mb-2 text-lg">
+              Mối quan hệ:
+            </label>
+            <select
+              value={selectedRole}
+              onChange={(e) => {
+                setSelectedRole(e.target.value as RoleId | '');
+                // Reset state khi user thay đổi role (chuẩn bị cho lượt quay mới)
+                if (currentPhase === 'idle') {
+                  resetScratchCardState();
+                }
+              }}
+              className="w-full bg-gray-900 border-2 border-yellow-400 rounded-lg px-4 py-3 text-yellow-400 text-lg font-bold focus:outline-none focus:border-yellow-300"
+              style={{ color: '#FACC15' }}
+              disabled={isSpinning}
+            >
+              <option value="" style={{ backgroundColor: '#111827', color: '#FACC15' }}>
+                -- Chọn vai trò --
+              </option>
+              {ROLES.map((role) => (
+                <option 
+                  key={role.id} 
+                  value={role.id}
+                  style={{ backgroundColor: '#111827', color: '#FACC15' }}
+                >
+                  {role.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <motion.button
-            onClick={handleSpin}
+            onClick={() => handleSpin(false)}
             disabled={isSpinning}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className={`w-full text-red-900 font-black text-2xl py-4 rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all ${
-              state.stealthTriggerActive
-                ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:shadow-purple-500/50'
-                : 'bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-400 hover:shadow-yellow-400/50'
-            }`}
+            className="w-full text-red-900 font-black text-2xl py-4 rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-400 hover:shadow-yellow-400/50"
           >
             <span className="flex items-center justify-center gap-2">
               <Sparkles className="w-6 h-6" />
@@ -300,129 +467,170 @@ export const SlotMachine = () => {
           <p className="text-white/60 text-sm text-center mt-4">
             May mắn luôn đồng hành cùng bạn! (Hoặc không...)
           </p>
-
-          {state.stealthTriggerActive && (
-            <div className="mt-4 bg-purple-900/50 border border-purple-500 rounded-lg p-3">
-              <p className="text-purple-300 text-xs text-center font-bold">
-                ⚡ STEALTH MODE ACTIVE
-              </p>
-            </div>
-          )}
         </motion.div>
       ) : (
         <div className="z-10">
           <AnimatePresence mode="wait">
-            {currentPhase === 'spinning' && (
+            {(currentPhase === 'spinning' || currentPhase === 'respin_spinning') && (
               <motion.div
-                key="spinning"
+                key="scratch-card"
+                initial={{ scale: 0, rotate: -10 }}
+                animate={{ scale: 1, rotate: 0 }}
+                exit={{ scale: 0, rotate: 10 }}
+                className="relative flex flex-col items-center"
+              >
+                <div className="bg-gradient-to-br from-red-600 to-red-800 rounded-2xl p-6 shadow-2xl border-4 border-yellow-400">
+                  <h2 className="text-yellow-400 text-2xl font-black text-center mb-4">
+                    🧧 Scratch Card Lì Xì 🧧
+                  </h2>
+                  
+                  {/* Scratch Card */}
+                  <div className="relative">3
+                    {/* Background với số tiền - Gradient với hiệu ứng ánh kim */}
+                    <div 
+                      className="w-80 h-48 md:w-96 md:h-56 rounded-xl flex items-center justify-center border-4 border-yellow-400 shadow-xl"
+                      style={{
+                        background: `
+                          linear-gradient(135deg,
+                            ${getBillColor(realValue)} 0%,
+                            rgba(255, 255, 255, 0.2) 45%,
+                            ${getBillColor(realValue)} 100%
+                          )
+                        `,
+                        boxShadow: `
+                          0 0 20px ${getBillColor(realValue)}80,
+                          inset 0 0 30px rgba(255, 255, 255, 0.1)
+                        `,
+                      }}
+                    >
+                      <div className="text-center">
+              <motion.div
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
-                exit={{ scale: 0 }}
-                className="relative"
-              >
-                <motion.div
-                  className="flex justify-center overflow-hidden rounded-xl border-4 border-yellow-400 bg-black/50 h-40"
-                  animate={{ y: [0, -1000] }}
-                  transition={{ duration: 2.5, ease: 'easeInOut' }}
-                >
-                  <div className="flex flex-col gap-2">
-                    {Array.from({ length: 30 }).map((_, i) => {
-                      const denom = allDenoms[i % allDenoms.length];
-                      return (
-                        <motion.div
-                          key={i}
-                          className="w-40 h-24 flex-shrink-0 rounded-lg flex items-center justify-center font-bold text-white text-2xl"
-                          style={{
-                            backgroundColor: getBillColor(denom),
-                            opacity: 0.9,
-                          }}
+                          transition={{ delay: 0.2 }}
+                          className="text-white font-black text-4xl md:text-5xl drop-shadow-2xl"
                         >
-                          {(denom / 1000).toFixed(0)}k
+                          {formatMoney(realValue)}
                         </motion.div>
-                      );
-                    })}
+                        <p className="text-white/90 text-lg mt-2 font-bold px-2 leading-relaxed">
+                          Chúc mừng năm mới, {userName}.<br/>
+                          Chúc {userName} {currentWish}! 🎉
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {/* Canvas overlay để gãi - LUÔN LUÔN render để che số tiền */}
+                    <canvas
+                      ref={canvasRef}
+                      className="absolute top-0 left-0 rounded-xl cursor-grab active:cursor-grabbing touch-none"
+                      style={{
+                        width: '100%', 
+                        height: '100%',
+                        maxWidth: '384px',
+                        maxHeight: '224px',
+                        // Khi reveal thì cho click xuyên + ẩn canvas
+                        pointerEvents: scratchRevealed ? 'none' : 'auto',
+                        opacity: scratchRevealed ? 0 : 1,
+                      }}
+                      onMouseDown={handleMouseDown}
+                      onMouseMove={handleMouseMove}
+                      onMouseUp={handleMouseUp}
+                      onMouseLeave={handleMouseUp}
+                      onTouchStart={handleTouchStart}
+                      onTouchMove={handleTouchMove}
+                      onTouchEnd={handleTouchEnd}
+                    />
                   </div>
-                </motion.div>
+                  
+                  {!scratchRevealed && (
+                    <p className="text-yellow-300 text-center mt-4 text-sm font-bold">
+                      👆 Gãi bằng chuột hoặc ngón tay để xem kết quả! 
+                      {scratchProgress > 0 && (
+                        <span className="block mt-1">
+                          Đã gãi: {Math.floor(scratchProgress)}% - Còn: {Math.ceil(85 - scratchProgress)}%
+                        </span>
+                      )}
+                    </p>
+                  )}
+                  
+                  {scratchProgress > 0 && !scratchRevealed && (
+                    <div className="mt-2 bg-gray-800 rounded-full h-2 overflow-hidden">
+                      <motion.div
+                        className="bg-yellow-400 h-full"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${scratchProgress}%` }}
+                        transition={{ duration: 0.3 }}
+                      />
+                  </div>
+                  )}
+                  
+                  {scratchRevealed && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="mt-4 text-center"
+                    >
+                      {currentResult?.requiresReSpin ? (
+                        <>
+                          <p className="text-yellow-400 text-xl font-black mb-2">
+                            🎉 Chúc mừng {userName}!
+                          </p>
 
-                <motion.p
-                  animate={{ opacity: [1, 0.5, 1] }}
-                  transition={{ duration: 1, repeat: Infinity }}
-                  className="text-white text-2xl font-bold mt-6 text-center"
-                >
-                  Đang quay...
-                </motion.p>
+                          <p className="text-white text-lg font-bold">
+                            Bạn nhận được{' '}
+                            <span className="text-yellow-400">{formatMoney(currentResult.realValue)}</span>
+                            {' '}+{' '}
+                            <span className="text-yellow-400">1 lượt quay miễn phí</span>!
+                          </p>
+
+                          {countdown > 0 ? (
+                            <motion.p
+                              key={countdown}
+                              initial={{ scale: 1.25 }}
+                              animate={{ scale: 1 }}
+                              className="text-white text-2xl font-black mt-2"
+                            >
+                              Mở quay tiếp sau: {countdown}s
+                            </motion.p>
+                          ) : (
+                            <motion.button
+                              onClick={() => handleSpin(true)}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              className="mt-4 w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-black text-xl py-4 rounded-xl shadow-lg transition-all"
+                            >
+                              <span className="flex items-center justify-center gap-2">
+                                <Sparkles className="w-6 h-6" />
+                                QUAY TIẾP
+                                <Sparkles className="w-6 h-6" />
+                              </span>
+                            </motion.button>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-yellow-400 text-xl font-black mb-2">
+                            🎉 Đã gãi xong rồi {userName} ơi!
+                          </p>
+                          {countdown > 0 && (
+                            <motion.p
+                              key={countdown}
+                              initial={{ scale: 1.5 }}
+                              animate={{ scale: 1 }}
+                              className="text-white text-2xl font-black"
+                            >
+                              Tiếp tục sau: {countdown}s
+                            </motion.p>
+                          )}
+                        </>
+                      )}
+                    </motion.div>
+                  )}
+                </div>
               </motion.div>
             )}
+            
 
-            {(currentPhase === 'result' || currentPhase === 'troll' || currentPhase === 'final') && scenarioText && (
-              <motion.div
-                key={currentPhase}
-                initial={{ scale: 0, rotate: -180 }}
-                animate={{ scale: 1, rotate: 0 }}
-                exit={{ scale: 0, rotate: 180 }}
-                className={`bg-black/60 backdrop-blur-lg border-4 rounded-2xl p-8 max-w-lg ${
-                  currentPhase === 'troll' ? 'border-red-600 animate-pulse' : 'border-yellow-400'
-                }`}
-              >
-                {currentPhase === 'troll' && (
-                  <motion.div
-                    animate={{ rotate: [0, 5, -5, 0] }}
-                    transition={{ duration: 0.2, repeat: 10 }}
-                    className="flex justify-center mb-4"
-                  >
-                    <AlertCircle className="w-16 h-16 text-red-500" />
-                  </motion.div>
-                )}
-
-                {currentPhase === 'result' && displayValue > 0 && (
-                  <motion.div
-                    animate={{ y: [0, -20, 0], scale: [1, 1.1, 1] }}
-                    transition={{ duration: 1, repeat: Infinity }}
-                    className="mb-6 flex justify-center"
-                  >
-                    <div
-                      className="w-32 h-20 rounded-lg flex items-center justify-center font-bold text-white text-3xl shadow-lg"
-                      style={{ backgroundColor: getBillColor(displayValue) }}
-                    >
-                      {(displayValue / 1000).toFixed(0)}k
-                    </div>
-                  </motion.div>
-                )}
-
-                <motion.h2
-                  initial={{ y: -20, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  className={`text-4xl md:text-5xl font-black ${scenarioText.color} text-center mb-4`}
-                >
-                  {scenarioText.title}
-                </motion.h2>
-
-                <motion.p
-                  initial={{ y: 20, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: 0.2 }}
-                  className="text-white text-lg text-center leading-relaxed"
-                >
-                  {scenarioText.subtitle}
-                </motion.p>
-
-                {currentPhase === 'final' && realValue > 0 && (
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ delay: 0.5 }}
-                    className="mt-6 text-center"
-                  >
-                    <div
-                      className="inline-block px-8 py-4 rounded-full font-black text-3xl text-red-900 shadow-lg"
-                      style={{ backgroundColor: getBillColor(realValue) }}
-                    >
-                      {formatMoney(realValue)}
-                    </div>
-                  </motion.div>
-                )}
-              </motion.div>
-            )}
           </AnimatePresence>
         </div>
       )}
@@ -431,16 +639,12 @@ export const SlotMachine = () => {
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: 0.5 }}
-        className="mt-8 z-10 cursor-pointer"
-        onClick={handleStealthTap}
+        className="mt-8 z-10"
       >
         <div className="text-center">
           <span className="text-6xl">🌸</span>
-          <p className="text-white/30 hover:text-white/60 text-xs transition-colors mt-2">
-            (Double-tap for stealth)
-          </p>
           <a
-            href="/admin-duy-only"
+            href="/admin"
             className="text-white/30 hover:text-white/60 text-sm transition-colors block mt-2"
           >
             🔐 Admin Access
