@@ -228,7 +228,7 @@ export const SpinWheel = () => {
         className="text-center mb-8 z-10"
       >
         <h1 className="text-5xl md:text-7xl font-black text-yellow-400 mb-2 drop-shadow-lg">
-          🧧 VÒNG QUAY LÌ XÌ TẾT 🧧
+          🧧 Lì Xì May Mắn 🧧
         </h1>
         <p className="text-white/90 text-lg md:text-xl max-w-2xl mx-auto">
           Quay là có, ít hay nhiều là do... ngân quỹ của Duy.

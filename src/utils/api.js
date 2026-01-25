@@ -12,6 +12,8 @@ export const setToken = (token) => {
   } else {
     localStorage.removeItem('auth_token');
   }
+  // Dispatch custom event to notify other tabs
+  window.dispatchEvent(new CustomEvent('auth-token-changed', { detail: { token } }));
 };
 
 // API request helper

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { authAPI, setToken } from '../utils/api';
 
 interface UserProfile {
@@ -24,17 +24,7 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Check if user is already logged in
-    const token = localStorage.getItem('auth_token');
-    if (token) {
-      loadUserProfile();
-    } else {
-      setLoading(false);
-    }
-  }, []);
-
-  const loadUserProfile = async () => {
+  const loadUserProfile = useCallback(async () => {
     try {
       const userData = await authAPI.getMe();
       setUser(userData);
@@ -48,7 +38,61 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
       setProfile(null);
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    // Check if user is already logged in
+    const checkAuth = () => {
+      const token = localStorage.getItem('auth_token');
+      if (token) {
+        loadUserProfile();
+      } else {
+        setLoading(false);
+      }
+    };
+
+    // Initial check
+    checkAuth();
+
+    // Listen for storage changes (when user logs in/out in another tab)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'auth_token') {
+        if (e.newValue) {
+          // Token was added in another tab, load user profile
+          loadUserProfile();
+        } else {
+          // Token was removed in another tab, log out
+          setUser(null);
+          setProfile(null);
+        }
+      }
+    };
+
+    // Listen for custom auth-token-changed event (same tab)
+    const handleAuthTokenChanged = (e: CustomEvent) => {
+      if (e.detail.token) {
+        loadUserProfile();
+      } else {
+        setUser(null);
+        setProfile(null);
+      }
+    };
+
+    // Check auth when window gains focus (user switches back to tab)
+    const handleFocus = () => {
+      checkAuth();
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('auth-token-changed', handleAuthTokenChanged as EventListener);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('auth-token-changed', handleAuthTokenChanged as EventListener);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [loadUserProfile]);
 
   const signUp = async (email: string, password: string, displayName: string) => {
     try {

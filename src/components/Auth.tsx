@@ -49,7 +49,7 @@ export const Auth = () => {
       >
         <div className="text-center mb-6">
           <h1 className="text-4xl font-black text-yellow-400 mb-2">
-            🧧 VÒNG QUAY LÌ XÌ TẾT 🧧
+            🧧 Lì Xì May Mắn 🧧
           </h1>
           <p className="text-white/80 text-sm">
             {isLogin ? 'Đăng nhập để bắt đầu' : 'Tạo tài khoản mới'}
