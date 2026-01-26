@@ -314,9 +314,16 @@ export const GameProvider = ({ children, userId, userName, isSharedMode = false,
     }
 
     // Tính available denominations dựa trên budget còn lại
-    // Chỉ lấy các mệnh giá có initial_quantity > 0 và có thể quay được
+    // Chỉ lấy các mệnh giá:
+    // - Có initial_quantity > 0
+    // - Số tờ còn lại (sau khi trừ lịch sử quay) > 0
+    // - Và còn đủ budget để quay
     const availableDenoms = roleInventory.filter((d) => {
       if (d.initial_quantity <= 0) return false;
+
+      const remainingQuantity = getDenominationRemainingQuantity(roleId, d.value);
+      if (remainingQuantity <= 0) return false;
+
       // Kiểm tra xem còn đủ budget để quay mệnh giá này không
       return roleRemaining >= d.value;
     });
@@ -399,6 +406,8 @@ export const GameProvider = ({ children, userId, userName, isSharedMode = false,
         });
       } else {
         // Fallback: nếu không thể force, quay random
+        // Đồng thời auto chuyển rigging mode về HONEST (random)
+        setRiggingMode('random');
         console.warn('⚠️ Force mode cannot be applied, falling back to random:', {
           roleId,
           targetValue: riggingConfig.target_value,
