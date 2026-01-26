@@ -38,14 +38,16 @@ interface GameContextType {
   adminLogin: (pin: string) => boolean;
   adminLogout: () => void;
   updateRoleDenominationQuantity: (roleId: RoleId, value: number, quantity: number) => void;
-  setRiggingMode: (mode: RiggingMode, targetValue?: number, fakeValue?: number) => void;
+  setRiggingMode: (mode: RiggingMode, targetValue?: number, fakeValue?: number) => Promise<void>;
   performSpin: (userName: string, roleId: RoleId) => SpinResult;
   resetRoleInventory: (roleId: RoleId) => void;
   getTotalMoneyInSystem: () => number;
   getRoleBudget: (roleId: RoleId) => number;
   getRoleSpent: (roleId: RoleId) => number;
   getRoleRemaining: (roleId: RoleId) => number;
+  getDenominationRemainingQuantity: (roleId: RoleId, value: number) => number;
   refreshSpinHistory: () => Promise<void>;
+  resetAllData: () => Promise<void>;
 }
 
 export interface SpinResult {
@@ -60,7 +62,7 @@ export interface SpinResult {
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
 
-export const GameProvider = ({ children, userId, userName }: { children: ReactNode; userId: string; userName: string }) => {
+export const GameProvider = ({ children, userId, userName, isSharedMode = false, shareToken = '' }: { children: ReactNode; userId: string; userName: string; isSharedMode?: boolean; shareToken?: string }) => {
   const [state, setState] = useState<GameState>(initialState);
   const [loading, setLoading] = useState(true);
 
@@ -70,32 +72,58 @@ export const GameProvider = ({ children, userId, userName }: { children: ReactNo
 
     const loadGameState = async () => {
       try {
-        // Load game state
-        const data = await gameAPI.getState();
-        
-        // Load spin history
+        let data: any;
         let history: SpinHistory[] = [];
-        try {
-          const historyData = await gameAPI.getSpinHistory(100);
-          // Convert backend format (camelCase) to frontend format (snake_case)
-          history = historyData.map((item: any) => ({
-            id: item._id || item.id || Date.now().toString() + Math.random(),
-            timestamp: item.timestamp || Date.now(),
-            user_name: item.userName || item.user_name || 'Anonymous',
-            role_id: item.roleId || item.role_id || null,
-            display_value: item.displayValue !== undefined && item.displayValue !== null ? item.displayValue : (item.display_value !== undefined && item.display_value !== null ? item.display_value : 0),
-            real_value: item.realValue !== undefined && item.realValue !== null ? item.realValue : (item.real_value !== undefined && item.real_value !== null ? item.real_value : 0),
-            scenario_used: item.scenarioUsed || item.scenario_used || 'unknown',
-          }));
-        } catch (historyError) {
-          console.error('Error loading spin history:', historyError);
-          // Continue without history if it fails
+
+        if (isSharedMode && shareToken) {
+          // Load from shared endpoint (no auth)
+          data = await gameAPI.getSharedState(shareToken);
+          // Load spin history for shared mode too (to calculate budget correctly)
+          try {
+            const historyData = await gameAPI.getSharedSpinHistory(shareToken, 100);
+            history = historyData.map((item: any) => ({
+              id: item._id || item.id || Date.now().toString() + Math.random(),
+              timestamp: item.timestamp || Date.now(),
+              user_name: item.userName || item.user_name || 'Anonymous',
+              role_id: item.roleId || item.role_id || null,
+              display_value: item.displayValue !== undefined && item.displayValue !== null ? item.displayValue : (item.display_value !== undefined && item.display_value !== null ? item.display_value : 0),
+              real_value: item.realValue !== undefined && item.realValue !== null ? item.realValue : (item.real_value !== undefined && item.real_value !== null ? item.real_value : 0),
+              scenario_used: item.scenarioUsed || item.scenario_used || 'unknown',
+            }));
+          } catch (historyError) {
+            console.error('Error loading shared spin history:', historyError);
+            history = [];
+          }
+        } else {
+          // Load game state (authenticated)
+          data = await gameAPI.getState();
+          
+          // Load spin history
+          try {
+            const historyData = await gameAPI.getSpinHistory(100);
+            // Convert backend format (camelCase) to frontend format (snake_case)
+            history = historyData.map((item: any) => ({
+              id: item._id || item.id || Date.now().toString() + Math.random(),
+              timestamp: item.timestamp || Date.now(),
+              user_name: item.userName || item.user_name || 'Anonymous',
+              role_id: item.roleId || item.role_id || null,
+              display_value: item.displayValue !== undefined && item.displayValue !== null ? item.displayValue : (item.display_value !== undefined && item.display_value !== null ? item.display_value : 0),
+              real_value: item.realValue !== undefined && item.realValue !== null ? item.realValue : (item.real_value !== undefined && item.real_value !== null ? item.real_value : 0),
+              scenario_used: item.scenarioUsed || item.scenario_used || 'unknown',
+            }));
+          } catch (historyError) {
+            console.error('Error loading spin history:', historyError);
+            // Continue without history if it fails
+          }
         }
 
+        const loadedRiggingConfig = data.riggingConfig || initialState.riggingConfig;
+        console.log('📥 Loaded riggingConfig from API:', loadedRiggingConfig);
+        
         setState({
           roleInventories: data.roleInventories || createInitialRoleInventories(),
           spinHistory: history,
-          riggingConfig: data.riggingConfig || initialState.riggingConfig,
+          riggingConfig: loadedRiggingConfig,
           isAdminAuthenticated: false,
         });
         setLoading(false);
@@ -108,24 +136,85 @@ export const GameProvider = ({ children, userId, userName }: { children: ReactNo
     };
 
     loadGameState();
-  }, [userId]);
+  }, [userId, isSharedMode, shareToken]);
 
   // Save game state to API whenever it changes (debounced)
+  // Skip saving in shared mode (read-only)
   useEffect(() => {
-    if (!userId || loading) return;
+    if (!userId || loading || isSharedMode) return;
 
     const saveGameState = async () => {
       try {
+        console.log('💾 Saving riggingConfig to API:', state.riggingConfig);
         await gameAPI.updateState(state.roleInventories, state.riggingConfig);
+        console.log('✅ RiggingConfig saved successfully');
       } catch (error) {
-        console.error('Error saving game state:', error);
+        console.error('❌ Error saving game state:', error);
       }
     };
 
     // Debounce saves to avoid too many writes
+    // Note: riggingConfig is saved immediately in setRiggingMode, so we exclude it from dependencies
     const timeoutId = setTimeout(saveGameState, 500);
     return () => clearTimeout(timeoutId);
-  }, [state.roleInventories, state.riggingConfig, userId, loading]);
+  }, [state.roleInventories, userId, loading, isSharedMode]);
+
+  // Poll riggingConfig from backend periodically to sync across tabs/devices
+  // Works for both authenticated mode and shared mode
+  useEffect(() => {
+    if (loading) return;
+    if (!userId && !isSharedMode) return;
+    if (isSharedMode && !shareToken) return;
+
+    const pollRiggingConfig = async () => {
+      try {
+        let data;
+        if (isSharedMode && shareToken) {
+          // Poll from shared endpoint
+          data = await gameAPI.getSharedState(shareToken);
+        } else if (userId) {
+          // Poll from authenticated endpoint
+          data = await gameAPI.getState();
+        } else {
+          return;
+        }
+
+        if (data.riggingConfig) {
+          // Only update if different to avoid unnecessary re-renders
+          setState((prev) => {
+            if (
+              prev.riggingConfig.next_spin_mode !== data.riggingConfig.next_spin_mode ||
+              prev.riggingConfig.target_value !== data.riggingConfig.target_value ||
+              prev.riggingConfig.fake_value !== data.riggingConfig.fake_value
+            ) {
+              console.log('🔄 RiggingConfig synced from backend:', data.riggingConfig, isSharedMode ? '(shared mode)' : '(authenticated mode)');
+              return {
+                ...prev,
+                riggingConfig: data.riggingConfig,
+              };
+            }
+            return prev;
+          });
+        }
+      } catch (error) {
+        console.error('Error polling riggingConfig:', error);
+      }
+    };
+
+    // Poll every 2 seconds to sync across tabs
+    const intervalId = setInterval(pollRiggingConfig, 2000);
+    
+    // Also check when window gains focus
+    const handleFocus = () => {
+      pollRiggingConfig();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [userId, loading, isSharedMode, shareToken]);
 
   const adminLogin = (pin: string): boolean => {
     if (pin === ADMIN_PIN) {
@@ -164,20 +253,47 @@ export const GameProvider = ({ children, userId, userName }: { children: ReactNo
     });
   };
 
-  const setRiggingMode = (mode: RiggingMode, targetValue?: number, fakeValue?: number) => {
-    setState((prev) => ({
-      ...prev,
-      riggingConfig: {
-        next_spin_mode: mode,
-        target_value: targetValue || null,
-        fake_value: fakeValue || null,
-      },
-    }));
+  const setRiggingMode = async (mode: RiggingMode, targetValue?: number, fakeValue?: number) => {
+    const newConfig = {
+      next_spin_mode: mode,
+      target_value: targetValue !== undefined ? targetValue : null,
+      fake_value: fakeValue !== undefined ? fakeValue : null,
+    };
+    console.log('🔧 Rigging mode set:', newConfig);
+    
+    // Update local state immediately
+    setState((prev) => {
+      // Save to backend IMMEDIATELY (no debounce) so other tabs/devices can use it
+      if (!isSharedMode && userId) {
+        // Save riggingConfig immediately in background (fire and forget)
+        gameAPI.updateState(prev.roleInventories, newConfig)
+          .then(() => {
+            console.log('✅ RiggingConfig saved immediately - will sync across all tabs/devices');
+          })
+          .catch((error) => {
+            console.error('❌ Error saving riggingConfig immediately:', error);
+          });
+      }
+      
+      // Return updated state
+      return {
+        ...prev,
+        riggingConfig: newConfig,
+      };
+    });
   };
 
   const performSpin = (userName: string, roleId: RoleId): SpinResult => {
     const { roleInventories, riggingConfig } = state;
     const roleInventory = roleInventories[roleId] || [];
+    
+    console.log('🎰 performSpin called:', {
+      userName,
+      roleId,
+      riggingMode: riggingConfig.next_spin_mode,
+      targetValue: riggingConfig.target_value,
+      fakeValue: riggingConfig.fake_value,
+    });
 
     // Tính budget còn lại cho role này
     const roleBudget = getRoleBudget(roleId);
@@ -216,15 +332,26 @@ export const GameProvider = ({ children, userId, userName }: { children: ReactNo
         scenario_used: 'empty',
       };
       
-      // Save to API
-      gameAPI.addSpinHistory({
-        timestamp: history.timestamp,
-        userName: history.user_name,
-        roleId: history.role_id,
-        displayValue: history.display_value,
-        realValue: history.real_value,
-        scenarioUsed: history.scenario_used,
-      }).catch(err => console.error('Error saving spin history:', err));
+      // Save to API (use shared API if in shared mode)
+      if (isSharedMode && shareToken) {
+        gameAPI.addSharedSpinHistory(shareToken, {
+          timestamp: history.timestamp,
+          userName: history.user_name,
+          roleId: history.role_id,
+          displayValue: history.display_value,
+          realValue: history.real_value,
+          scenarioUsed: history.scenario_used,
+        }).catch(err => console.error('Error saving shared spin history:', err));
+      } else {
+        gameAPI.addSpinHistory({
+          timestamp: history.timestamp,
+          userName: history.user_name,
+          roleId: history.role_id,
+          displayValue: history.display_value,
+          realValue: history.real_value,
+          scenarioUsed: history.scenario_used,
+        }).catch(err => console.error('Error saving spin history:', err));
+      }
 
       return {
         displayValue: 0,
@@ -241,12 +368,47 @@ export const GameProvider = ({ children, userId, userName }: { children: ReactNo
     let isTroll = false;
 
     if (riggingConfig.next_spin_mode === 'force_value' && riggingConfig.target_value) {
-      const targetDenom = availableDenoms.find((d) => d.value === riggingConfig.target_value);
-      if (targetDenom) {
+      console.log('🎯 Force mode check:', {
+        roleId,
+        targetValue: riggingConfig.target_value,
+        roleInventory: roleInventory.map(d => ({ value: d.value, initial_quantity: d.initial_quantity })),
+        roleRemaining,
+        availableDenoms: availableDenoms.map(d => d.value),
+      });
+      
+      // Kiểm tra target_value có trong roleInventory của role đang quay
+      const targetDenom = roleInventory.find((d) => d.value === riggingConfig.target_value);
+      
+      // Kiểm tra số tờ còn lại > 0
+      const remainingQuantity = getDenominationRemainingQuantity(roleId, riggingConfig.target_value);
+      
+      // Kiểm tra budget còn lại có đủ cho target_value không
+      const canAffordTarget = roleRemaining >= riggingConfig.target_value;
+      
+      if (targetDenom && targetDenom.initial_quantity > 0 && remainingQuantity > 0 && canAffordTarget) {
+        // Force mode: người này chắc chắn nhận giá trị này
         realValue = targetDenom.value;
         displayValue = realValue;
         scenario = 'forced';
+        console.log('✅ Force mode applied successfully:', {
+          roleId,
+          targetValue: riggingConfig.target_value,
+          realValue,
+          roleRemaining,
+          remainingQuantity,
+        });
       } else {
+        // Fallback: nếu không thể force, quay random
+        console.warn('⚠️ Force mode cannot be applied, falling back to random:', {
+          roleId,
+          targetValue: riggingConfig.target_value,
+          targetDenom: targetDenom ? { value: targetDenom.value, initial_quantity: targetDenom.initial_quantity } : 'not found',
+          hasInitialQuantity: targetDenom?.initial_quantity > 0,
+          remainingQuantity,
+          canAfford: canAffordTarget,
+          roleRemaining,
+          availableDenoms: availableDenoms.map(d => ({ value: d.value, initial_quantity: d.initial_quantity })),
+        });
         realValue = weightedRandomPick(availableDenoms);
         displayValue = realValue;
         scenario = 'random';
@@ -256,13 +418,31 @@ export const GameProvider = ({ children, userId, userName }: { children: ReactNo
       riggingConfig.fake_value &&
       riggingConfig.target_value
     ) {
-      const targetDenom = availableDenoms.find((d) => d.value === riggingConfig.target_value);
-      if (targetDenom) {
+      // Kiểm tra target_value có trong roleInventory và có initial_quantity > 0
+      const targetDenom = roleInventory.find((d) => d.value === riggingConfig.target_value);
+      
+      // Kiểm tra số tờ còn lại > 0
+      const remainingQuantity = getDenominationRemainingQuantity(roleId, riggingConfig.target_value);
+      
+      // Kiểm tra budget còn lại có đủ cho target_value không
+      const canAffordTarget = roleRemaining >= riggingConfig.target_value;
+      
+      if (targetDenom && targetDenom.initial_quantity > 0 && remainingQuantity > 0 && canAffordTarget) {
+        // Apply troll mode
         displayValue = riggingConfig.fake_value;
         realValue = riggingConfig.target_value;
         scenario = 'troll_fake_to_real';
         isTroll = true;
       } else {
+        // Fallback: nếu không thể apply troll, quay random
+        console.warn('Troll mode cannot be applied:', {
+          targetDenom: targetDenom ? 'found' : 'not found',
+          hasInitialQuantity: targetDenom?.initial_quantity > 0,
+          remainingQuantity,
+          canAfford: canAffordTarget,
+          roleRemaining,
+          targetValue: riggingConfig.target_value,
+        });
         realValue = weightedRandomPick(availableDenoms);
         displayValue = realValue;
         scenario = 'random';
@@ -302,20 +482,35 @@ export const GameProvider = ({ children, userId, userName }: { children: ReactNo
         scenario_used: scenario,
       };
 
-      // Save to API (fire and forget, but log errors)
-      gameAPI.addSpinHistory({
-        timestamp: history.timestamp,
-        userName: history.user_name,
-        roleId: history.role_id,
-        displayValue: history.display_value,
-        realValue: history.real_value,
-        scenarioUsed: history.scenario_used,
-      }).catch(err => {
-        console.error('Error saving spin history:', err);
-      });
+      // Save to API (use shared API if in shared mode)
+      if (isSharedMode && shareToken) {
+        gameAPI.addSharedSpinHistory(shareToken, {
+          timestamp: history.timestamp,
+          userName: history.user_name,
+          roleId: history.role_id,
+          displayValue: history.display_value,
+          realValue: history.real_value,
+          scenarioUsed: history.scenario_used,
+        }).catch(err => {
+          console.error('Error saving shared spin history:', err);
+        });
+      } else {
+        gameAPI.addSpinHistory({
+          timestamp: history.timestamp,
+          userName: history.user_name,
+          roleId: history.role_id,
+          displayValue: history.display_value,
+          realValue: history.real_value,
+          scenarioUsed: history.scenario_used,
+        }).catch(err => {
+          console.error('Error saving spin history:', err);
+        });
+      }
 
       // Add to local state immediately (optimistic update)
       // KHÔNG thay đổi roleInventories - giữ nguyên quantity
+      // Reset riggingConfig sau khi đã quay (force/troll chỉ áp dụng 1 lần)
+      console.log('🔄 Resetting riggingConfig after spin');
       return {
         ...prev,
         spinHistory: [history, ...prev.spinHistory],
@@ -358,18 +553,15 @@ export const GameProvider = ({ children, userId, userName }: { children: ReactNo
 
   const resetRoleInventory = (roleId: RoleId) => {
     setState((prev) => {
-      const roleInv = prev.roleInventories[roleId] || [];
-      const resetRoleInv = roleInv.map((d) => ({
-        ...d,
-        quantity: d.initial_quantity,
-      }));
+      // Reset: xóa tất cả spin history của role này để số tờ còn lại = initial_quantity
+      // Điều này sẽ làm cho budget của role này quay về ban đầu
+      const filteredHistory = prev.spinHistory.filter(
+        (log) => log.role_id !== roleId
+      );
 
       return {
         ...prev,
-        roleInventories: {
-          ...prev.roleInventories,
-          [roleId]: resetRoleInv,
-        },
+        spinHistory: filteredHistory,
       };
     });
   };
@@ -405,6 +597,21 @@ export const GameProvider = ({ children, userId, userName }: { children: ReactNo
     return getRoleBudget(roleId) - getRoleSpent(roleId);
   };
 
+  // Tính số tờ còn lại của một mệnh giá cụ thể trong một role
+  const getDenominationRemainingQuantity = (roleId: RoleId, value: number): number => {
+    const roleInventory = state.roleInventories[roleId] || [];
+    const denom = roleInventory.find((d) => d.value === value);
+    if (!denom) return 0;
+    
+    const initialQuantity = denom.initial_quantity || 0;
+    // Tính số tờ đã quay từ spin history
+    const spentCount = state.spinHistory.filter(
+      (log) => log.role_id === roleId && log.real_value === value
+    ).length;
+    
+    return Math.max(0, initialQuantity - spentCount);
+  };
+
   const refreshSpinHistory = async (): Promise<void> => {
     try {
       const historyData = await gameAPI.getSpinHistory(100);
@@ -425,6 +632,52 @@ export const GameProvider = ({ children, userId, userName }: { children: ReactNo
       }));
     } catch (error) {
       console.error('Error refreshing spin history:', error);
+      throw error;
+    }
+  };
+
+  // Reset toàn bộ dữ liệu: xóa tất cả spin history, reset tất cả inventories về 0, reset riggingConfig
+  const resetAllData = async (): Promise<void> => {
+    try {
+      // Bước 1: Xóa toàn bộ spin history trong database trước
+      if (!isSharedMode) {
+        await gameAPI.deleteAllSpinHistory();
+        console.log('✅ Đã xóa toàn bộ spin history trong database');
+      }
+
+      // Bước 2: Reset tất cả roleInventories về 0
+      const resetInventories: { [key: string]: Denomination[] } = {};
+      Object.keys(state.roleInventories).forEach((roleId) => {
+        resetInventories[roleId] = state.roleInventories[roleId as RoleId].map((d) => ({
+          ...d,
+          quantity: 0,
+          initial_quantity: 0,
+        }));
+      });
+
+      // Bước 3: Reset riggingConfig về random
+      const resetRiggingConfig = {
+        next_spin_mode: 'random' as RiggingMode,
+        target_value: null,
+        fake_value: null,
+      };
+
+      // Bước 4: Xóa toàn bộ spin history trong state và reset inventories
+      setState((prev) => ({
+        ...prev,
+        roleInventories: resetInventories,
+        spinHistory: [],
+        riggingConfig: resetRiggingConfig,
+      }));
+
+      // Bước 5: Lưu inventories và riggingConfig vào backend
+      if (!isSharedMode) {
+        await gameAPI.updateState(resetInventories, resetRiggingConfig);
+      }
+      
+      console.log('✅ Đã reset toàn bộ dữ liệu');
+    } catch (error) {
+      console.error('❌ Error resetting all data:', error);
       throw error;
     }
   };
@@ -452,7 +705,9 @@ export const GameProvider = ({ children, userId, userName }: { children: ReactNo
         getRoleBudget,
         getRoleSpent,
         getRoleRemaining,
+        getDenominationRemainingQuantity,
         refreshSpinHistory,
+        resetAllData,
       }}
     >
       {children}

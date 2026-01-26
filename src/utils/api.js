@@ -92,4 +92,44 @@ export const gameAPI = {
   getSpinHistory: async (limit = 50) => {
     return apiRequest(`/game/spin-history?limit=${limit}`);
   },
+
+  deleteAllSpinHistory: async () => {
+    return apiRequest('/game/spin-history', {
+      method: 'DELETE',
+    });
+  },
+
+  // Share API (public, no auth required)
+  getSharedState: async (token) => {
+    const response = await fetch(`${API_BASE_URL}/game/share/${token}`);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Request failed' }));
+      throw new Error(error.error || 'Request failed');
+    }
+    return response.json();
+  },
+
+  addSharedSpinHistory: async (token, spinData) => {
+    const response = await fetch(`${API_BASE_URL}/game/share/${token}/spin-history`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(spinData),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Request failed' }));
+      throw new Error(error.error || 'Request failed');
+    }
+    return response.json();
+  },
+
+  getSharedSpinHistory: async (token, limit = 50) => {
+    const response = await fetch(`${API_BASE_URL}/game/share/${token}/spin-history?limit=${limit}`);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Request failed' }));
+      throw new Error(error.error || 'Request failed');
+    }
+    return response.json();
+  },
 };

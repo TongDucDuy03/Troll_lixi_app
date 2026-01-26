@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useGame } from '../context/GameContext';
 import { useUser } from '../context/UserContext';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Lock, Unlock, RefreshCw, Shield, Skull, DollarSign, LogOut } from 'lucide-react';
+import { Lock, Unlock, RefreshCw, Shield, Skull, DollarSign, LogOut, Trash2, AlertTriangle } from 'lucide-react';
 import { ROLES, RoleId, ALL_DENOMINATIONS } from '../types';
 
 export const AdminPanel = () => {
@@ -18,9 +18,44 @@ export const AdminPanel = () => {
     getRoleBudget,
     getRoleSpent,
     getRoleRemaining,
+    getDenominationRemainingQuantity,
     refreshSpinHistory,
+    resetAllData,
   } = useGame();
+
+  // Helper để kiểm tra xem có thể apply troll/force mode không
+  // Kiểm tra: mệnh giá có trong inventory, có initial_quantity > 0, còn tờ (remaining > 0), và có đủ budget
+  const canApplyRigging = (targetValue: number, roleId?: RoleId) => {
+    if (!roleId) return false;
+    const roleInventory = state.roleInventories[roleId] || [];
+    const targetDenom = roleInventory.find((d) => d.value === targetValue);
+    if (!targetDenom || targetDenom.initial_quantity <= 0) return false;
+    
+    // Kiểm tra số tờ còn lại > 0
+    const remainingQuantity = getDenominationRemainingQuantity(roleId, targetValue);
+    if (remainingQuantity <= 0) return false;
+    
+    // Kiểm tra budget còn lại có đủ không
+    const roleRemaining = getRoleRemaining(roleId);
+    return roleRemaining >= targetValue;
+  };
+  
+  // Helper để lấy thông tin chi tiết về mệnh giá (để hiển thị cảnh báo)
+  const getDenominationInfo = (targetValue: number) => {
+    const info: { [roleId: string]: { remaining: number; roleName: string } } = {};
+    ROLES.forEach((role) => {
+      const remaining = getDenominationRemainingQuantity(role.id, targetValue);
+      if (remaining >= 0) {
+        info[role.id] = {
+          remaining,
+          roleName: role.name,
+        };
+      }
+    });
+    return info;
+  };
   const { signOut } = useUser();
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
@@ -53,16 +88,79 @@ export const AdminPanel = () => {
     return value.toLocaleString('vi-VN') + 'đ';
   };
 
-  const applyRigging = () => {
+  const applyRigging = async () => {
     if (riggingTab === 'honest') {
-      setRiggingMode('random');
+      await setRiggingMode('random');
       alert('Chế độ TRUNG THỰC đã kích hoạt! (Boring...)');
     } else if (riggingTab === 'force') {
-      setRiggingMode('force_value', forceValue);
-      alert(`Người tiếp theo SẼ NHẬN ${formatFullMoney(forceValue)}! 🎯`);
+      // Kiểm tra tất cả roles xem có role nào có thể apply force không
+      const canApply = ROLES.some(role => canApplyRigging(forceValue, role.id));
+      if (!canApply) {
+        // Kiểm tra chi tiết để đưa ra cảnh báo cụ thể
+        const denomInfo = getDenominationInfo(forceValue);
+        const rolesWithZero = Object.entries(denomInfo)
+          .filter(([_, info]) => info.remaining === 0)
+          .map(([_, info]) => info.roleName);
+        
+        let message = `⚠️ Cảnh báo: Không thể force ${formatFullMoney(forceValue)}!\n\n`;
+        
+        if (rolesWithZero.length > 0) {
+          message += `❌ Mệnh giá này đã HẾT ở các role:\n${rolesWithZero.map(name => `   - ${name}`).join('\n')}\n\n`;
+        }
+        
+        const hasRole = Object.keys(denomInfo).length > 0;
+        if (!hasRole) {
+          message += `❌ Mệnh giá này không có trong inventory của bất kỳ role nào\n\n`;
+        } else {
+          const rolesWithBudget = Object.entries(denomInfo)
+            .filter(([_, info]) => info.remaining > 0)
+            .map(([_, info]) => info.roleName);
+          if (rolesWithBudget.length === 0) {
+            message += `❌ Tất cả các role đều đã hết mệnh giá này\n\n`;
+          }
+        }
+        
+        message += `Vui lòng kiểm tra lại budget và inventory!`;
+        alert(message);
+        return;
+      }
+      await setRiggingMode('force_value', forceValue);
+      alert(`Người tiếp theo SẼ NHẬN ${formatFullMoney(forceValue)}! 🎯\n\n(Lưu ý: Force mode đã được lưu và sẽ hoạt động trên tất cả tabs/devices cùng tài khoản)`);
     } else if (riggingTab === 'troll') {
-      setRiggingMode('troll_fake_high_to_low', trollReal, trollFake);
-      alert(`TROLL MODE: Hiện ${formatFullMoney(trollFake)} ➜ Thật ra ${formatFullMoney(trollReal)}! 😈`);
+      // Kiểm tra tất cả roles xem có role nào có thể apply troll không
+      const canApply = ROLES.some(role => canApplyRigging(trollReal, role.id));
+      if (!canApply) {
+        // Kiểm tra chi tiết để đưa ra cảnh báo cụ thể
+        const denomInfo = getDenominationInfo(trollReal);
+        const rolesWithZero = Object.entries(denomInfo)
+          .filter(([_, info]) => info.remaining === 0)
+          .map(([_, info]) => info.roleName);
+        
+        let message = `⚠️ Cảnh báo: Không thể apply TROLL MODE!\n\n`;
+        message += `Mệnh giá thật: ${formatFullMoney(trollReal)}\n\n`;
+        
+        if (rolesWithZero.length > 0) {
+          message += `❌ Mệnh giá này đã HẾT ở các role:\n${rolesWithZero.map(name => `   - ${name}`).join('\n')}\n\n`;
+        }
+        
+        const hasRole = Object.keys(denomInfo).length > 0;
+        if (!hasRole) {
+          message += `❌ Mệnh giá này không có trong inventory của bất kỳ role nào\n\n`;
+        } else {
+          const rolesWithBudget = Object.entries(denomInfo)
+            .filter(([_, info]) => info.remaining > 0)
+            .map(([_, info]) => info.roleName);
+          if (rolesWithBudget.length === 0) {
+            message += `❌ Tất cả các role đều đã hết mệnh giá này\n\n`;
+          }
+        }
+        
+        message += `Vui lòng kiểm tra lại budget và inventory!`;
+        alert(message);
+        return;
+      }
+      await setRiggingMode('troll_fake_high_to_low', trollReal, trollFake);
+      alert(`TROLL MODE: Hiện ${formatFullMoney(trollFake)} ➜ Thật ra ${formatFullMoney(trollReal)}! 😈\n\n(Lưu ý: Troll mode đã được lưu và sẽ hoạt động trên tất cả tabs/devices cùng tài khoản)`);
     }
   };
 
@@ -129,18 +227,34 @@ export const AdminPanel = () => {
           <div>
             <h1 className="text-4xl font-bold text-yellow-400 flex items-center gap-3">
               <Shield className="w-10 h-10" />
-              ADMIN CONTROL CENTER
+              ADMIN CONTROL
             </h1>
             <p className="text-gray-400 mt-1">Welcome back, {userName || 'Admin'}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
             <button
-              onClick={adminLogout}
-              className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors"
-              title="Thoát khỏi Admin Panel"
+              onClick={() => setShowResetConfirm(true)}
+              className="flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg transition-colors"
+              title="Reset toàn bộ dữ liệu về 0 và xóa lịch sử quay"
+            >
+              <Trash2 className="w-5 h-5" />
+              <span className="hidden sm:inline">Reset Tất Cả</span>
+              <span className="sm:hidden">Reset</span>
+            </button>
+            <button
+              onClick={() => {
+                adminLogout();
+                // Quay về trang quay lì xì (trang chính)
+                window.history.pushState({}, '', '/');
+                // Trigger custom event để App.tsx biết cần re-render
+                window.dispatchEvent(new PopStateEvent('popstate'));
+              }}
+              className="flex items-center justify-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors"
+              title="Thoát khỏi Admin Panel và quay về trang quay lì xì"
             >
               <Unlock className="w-5 h-5" />
-              Thoát Admin
+              <span className="hidden sm:inline">Thoát Admin</span>
+              <span className="sm:hidden">Thoát</span>
             </button>
             <button
               onClick={async () => {
@@ -148,11 +262,12 @@ export const AdminPanel = () => {
                 window.history.pushState({}, '', '/');
                 window.dispatchEvent(new PopStateEvent('popstate'));
               }}
-              className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"
+              className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"
               title="Đăng xuất khỏi hệ thống"
             >
               <LogOut className="w-5 h-5" />
-              Đăng xuất
+              <span className="hidden sm:inline">Đăng xuất</span>
+              <span className="sm:hidden">Logout</span>
             </button>
           </div>
         </div>
@@ -242,7 +357,16 @@ export const AdminPanel = () => {
 
                   <div className="space-y-3 max-h-96 overflow-y-auto">
                     {getAvailableDenominationsForRole(selectedRoleTab).map((denom) => {
-                      const currentQuantity = denom.quantity;
+                      const initialQuantity = denom.initial_quantity || 0;
+                      // Tính số tờ đã quay từ spin history
+                      const spentCount = state.spinHistory
+                        .filter((log) => 
+                          log.role_id === selectedRoleTab && 
+                          log.real_value === denom.value
+                        ).length;
+                      // Số tờ còn lại = initial - đã quay
+                      const remainingCount = Math.max(0, initialQuantity - spentCount);
+                      
                       return (
                         <div
                           key={denom.value}
@@ -252,15 +376,23 @@ export const AdminPanel = () => {
                             <p className="text-white font-bold text-lg">
                               {formatFullMoney(denom.value)}
                             </p>
-                            <p className="text-gray-400 text-sm">
-                              Quantity: {currentQuantity}
-                            </p>
+                            <div className="flex items-center gap-4 mt-1">
+                              <p className="text-gray-400 text-sm">
+                                Ban đầu: <span className="text-green-400 font-bold">{initialQuantity}</span> tờ
+                              </p>
+                              <p className="text-gray-400 text-sm">
+                                Đã quay: <span className="text-red-400 font-bold">{spentCount}</span> tờ
+                              </p>
+                              <p className="text-yellow-400 text-sm font-bold">
+                                Còn lại: <span className="text-yellow-300">{remainingCount}</span> tờ
+                              </p>
+                            </div>
                           </div>
                           <div className="flex items-center gap-3">
                             <input
                               type="number"
                               min="0"
-                              value={currentQuantity}
+                              value={initialQuantity}
                               onChange={(e) => {
                                 const newQuantity = parseInt(e.target.value) || 0;
                                 updateRoleDenominationQuantity(
@@ -270,6 +402,7 @@ export const AdminPanel = () => {
                                 );
                               }}
                               className="w-24 bg-gray-900 border-2 border-yellow-500 rounded-lg px-3 py-2 text-white text-center font-bold focus:outline-none focus:border-yellow-300"
+                              title="Số tờ ban đầu (budget)"
                             />
                           </div>
                         </div>
@@ -578,6 +711,77 @@ export const AdminPanel = () => {
           </div>
         </motion.div>
       </div>
+
+      {/* Reset Confirmation Modal */}
+      <AnimatePresence>
+        {showResetConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShowResetConfirm(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-gray-900 border-2 border-red-500 rounded-xl p-6 max-w-md w-full"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <AlertTriangle className="w-8 h-8 text-red-500" />
+                <h3 className="text-2xl font-bold text-red-500">Xác nhận Reset</h3>
+              </div>
+              
+              <div className="mb-6">
+                <p className="text-white text-lg mb-2">
+                  Bạn có chắc chắn muốn <span className="text-red-400 font-bold">RESET TOÀN BỘ DỮ LIỆU</span> không?
+                </p>
+                <div className="bg-red-900/30 border border-red-700 rounded-lg p-3 mt-3">
+                  <p className="text-red-300 text-sm">
+                    ⚠️ Hành động này sẽ:
+                  </p>
+                  <ul className="text-red-300 text-sm mt-2 ml-4 list-disc">
+                    <li>Xóa <span className="font-bold">TOÀN BỘ</span> lịch sử quay</li>
+                    <li>Reset tất cả số lượng tờ về <span className="font-bold">0</span></li>
+                    <li>Reset tất cả budget về <span className="font-bold">0</span></li>
+                    <li>Reset rigging mode về <span className="font-bold">Random</span></li>
+                  </ul>
+                  <p className="text-red-400 font-bold text-sm mt-3">
+                    ⚠️ Hành động này KHÔNG THỂ HOÀN TÁC!
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button
+                  onClick={async () => {
+                    try {
+                      await resetAllData();
+                      setShowResetConfirm(false);
+                      alert('✅ Đã reset toàn bộ dữ liệu thành công!');
+                    } catch (error) {
+                      alert('❌ Lỗi khi reset dữ liệu. Vui lòng thử lại.');
+                      console.error('Reset error:', error);
+                    }
+                  }}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  <Trash2 className="w-5 h-5" />
+                  Xác nhận Reset
+                </button>
+                <button
+                  onClick={() => setShowResetConfirm(false)}
+                  className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+                >
+                  Hủy
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

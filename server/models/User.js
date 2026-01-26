@@ -20,6 +20,11 @@ const userSchema = new mongoose.Schema({
       return this.email.split('@')[0];
     },
   },
+  shareToken: {
+    type: String,
+    unique: true,
+    sparse: true,
+  },
   createdAt: {
     type: Date,
     default: Date.now,

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useGame } from '../context/GameContext';
 import { useUser } from '../context/UserContext';
 import confetti from 'canvas-confetti';
-import { Sparkles, AlertCircle, LogOut } from 'lucide-react';
+import { Sparkles, AlertCircle, LogOut, Copy, Check } from 'lucide-react';
 import { ROLES, RoleId, ALL_DENOMINATIONS } from '../types';
 
 const playSpinSound = () => console.log('🎵 Spin sound');
@@ -25,9 +25,9 @@ const getBillColor = (value: number): string => {
   return colors[value] || '#FFD700';
 };
 
-export const SlotMachine = () => {
+export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean } = {}) => {
   const { performSpin, userName: contextUserName } = useGame();
-  const { signOut } = useUser();
+  const { signOut, user } = useUser();
   const [userName, setUserName] = useState('');
   const [selectedRole, setSelectedRole] = useState<RoleId | ''>('');
   const [isSpinning, setIsSpinning] = useState(false);
@@ -44,6 +44,8 @@ export const SlotMachine = () => {
   const [revealTime, setRevealTime] = useState<number | null>(null);
   const [countdown, setCountdown] = useState(0);
   const [currentWish, setCurrentWish] = useState('');
+  const [shareLink, setShareLink] = useState('');
+  const [linkCopied, setLinkCopied] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const WISHES = [
@@ -64,6 +66,32 @@ export const SlotMachine = () => {
     "sự nghiệp thăng tiến"
   ];
 
+
+  // Load share link when user is available
+  useEffect(() => {
+    if (!isSharedMode && user) {
+      const loadShareLink = async () => {
+        try {
+          const token = localStorage.getItem('auth_token');
+          if (!token) return;
+          
+          const userData = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/auth/me`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          }).then(res => res.json());
+          
+          if (userData.shareToken) {
+            const shareUrl = `${window.location.origin}/share/${userData.shareToken}`;
+            setShareLink(shareUrl);
+          }
+        } catch (error) {
+          console.error('Error loading share link:', error);
+        }
+      };
+      loadShareLink();
+    }
+  }, [user, isSharedMode]);
 
   // Vẽ lớp phủ NGAY khi vừa vào phase spinning/respin_spinning
   useEffect(() => {
@@ -475,6 +503,50 @@ export const SlotMachine = () => {
           <p className="text-white/60 text-sm text-center mt-4">
             May mắn luôn đồng hành cùng bạn! (Hoặc không...)
           </p>
+          
+          {/* Share Link Section */}
+          {!isSharedMode && shareLink && (
+            <div className="mt-4 p-4 bg-yellow-900/30 border-2 border-yellow-500 rounded-lg">
+              <p className="text-yellow-400 text-sm font-bold mb-2 text-center">
+                🔗 Chia sẻ link quay lì xì
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={shareLink}
+                  readOnly
+                  className="flex-1 bg-gray-900 border-2 border-yellow-400 rounded-lg px-3 py-2 text-yellow-400 text-sm font-mono"
+                />
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(shareLink);
+                      setLinkCopied(true);
+                      setTimeout(() => setLinkCopied(false), 2000);
+                    } catch (error) {
+                      console.error('Failed to copy:', error);
+                    }
+                  }}
+                  className="flex items-center gap-1 bg-yellow-500 hover:bg-yellow-600 text-red-900 font-bold px-4 py-2 rounded-lg transition-colors"
+                >
+                  {linkCopied ? (
+                    <>
+                      <Check className="w-4 h-4" />
+                      Đã copy!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      Copy
+                    </>
+                  )}
+                </button>
+              </div>
+              <p className="text-yellow-300/70 text-xs text-center mt-2">
+                Gửi link này cho người thân để họ quay vào ngân quỹ của bạn
+              </p>
+            </div>
+          )}
         </motion.div>
       ) : (
         <div className="z-10">
@@ -519,6 +591,17 @@ export const SlotMachine = () => {
                           className="text-white font-black text-4xl md:text-5xl drop-shadow-2xl"
                         >
                           {formatMoney(realValue)}
+                          {/* Hiển thị "+ 1 lượt quay miễn phí" ngay trên scratch card nếu là 1k hoặc 2k */}
+                          {currentResult?.requiresReSpin && (realValue === 1000 || realValue === 2000) && (
+                            <motion.span
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: 0.4 }}
+                              className="block text-yellow-300 text-xl md:text-2xl mt-2 font-bold"
+                            >
+                              + 1 lượt quay gỡ 🎁
+                            </motion.span>
+                          )}
                         </motion.div>
                         <p className="text-white/90 text-lg mt-2 font-bold px-2 leading-relaxed">
                           Chúc mừng năm mới, {userName}.<br/>
@@ -652,28 +735,32 @@ export const SlotMachine = () => {
         <div className="text-center">
           <span className="text-6xl">🌸</span>
           <div className="flex flex-col items-center gap-2 mt-2">
-            <a
-              href="/admin"
-              onClick={(e) => {
-                e.preventDefault();
-                window.history.pushState({}, '', '/admin');
-                window.dispatchEvent(new PopStateEvent('popstate'));
-              }}
-              className="text-white/30 hover:text-white/60 text-sm transition-colors"
-            >
-              🔐 Admin Access
-            </a>
-            <button
-              onClick={async () => {
-                await signOut();
-                window.history.pushState({}, '', '/');
-                window.dispatchEvent(new PopStateEvent('popstate'));
-              }}
-              className="flex items-center gap-1 text-white/30 hover:text-white/60 text-sm transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-              Đăng xuất
-            </button>
+            {!isSharedMode && (
+              <>
+                <a
+                  href="/admin"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.history.pushState({}, '', '/admin');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  className="text-white/30 hover:text-white/60 text-sm transition-colors"
+                >
+                  🔐 Admin Access
+                </a>
+                <button
+                  onClick={async () => {
+                    await signOut();
+                    window.history.pushState({}, '', '/');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  className="flex items-center gap-1 text-white/30 hover:text-white/60 text-sm transition-colors"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Đăng xuất
+                </button>
+              </>
+            )}
           </div>
         </div>
       </motion.div>

@@ -93,10 +93,18 @@ router.get('/me', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
+    // Generate shareToken if doesn't exist
+    if (!user.shareToken) {
+      const crypto = await import('crypto');
+      user.shareToken = crypto.randomBytes(16).toString('hex');
+      await user.save();
+    }
+
     res.json({
       id: user._id.toString(),
       email: user.email,
       displayName: user.displayName,
+      shareToken: user.shareToken,
     });
   } catch (error) {
     console.error('Get user error:', error);
