@@ -48,6 +48,27 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
   const [linkCopied, setLinkCopied] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  const copyToClipboard = async (text: string) => {
+    // Preferred modern API (only works in secure contexts + allowed permissions)
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    // Fallback for environments where navigator.clipboard is undefined (or blocked)
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', 'true');
+    textarea.style.position = 'fixed';
+    textarea.style.top = '-9999px';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    if (!ok) throw new Error('execCommand(copy) failed');
+  };
+
   const WISHES = [
     "hay ăn chóng lớn",
     "tiền vào như nước",
@@ -524,7 +545,7 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
                 <button
                   onClick={async () => {
                     try {
-                      await navigator.clipboard.writeText(shareLink);
+                      await copyToClipboard(shareLink);
                       setLinkCopied(true);
                       setTimeout(() => setLinkCopied(false), 2000);
                     } catch (error) {
