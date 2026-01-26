@@ -43,6 +43,9 @@ interface GameContextType {
   resetRoleInventory: (roleId: RoleId) => void;
   getTotalMoneyInSystem: () => number;
   getRoleBudget: (roleId: RoleId) => number;
+  getRoleSpent: (roleId: RoleId) => number;
+  getRoleRemaining: (roleId: RoleId) => number;
+  refreshSpinHistory: () => Promise<void>;
 }
 
 export interface SpinResult {
@@ -52,6 +55,7 @@ export interface SpinResult {
   isTroll: boolean;
   isEmpty: boolean;
   requiresReSpin?: boolean;
+  errorMessage?: string;
 }
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
@@ -60,16 +64,37 @@ export const GameProvider = ({ children, userId, userName }: { children: ReactNo
   const [state, setState] = useState<GameState>(initialState);
   const [loading, setLoading] = useState(true);
 
-  // Load game state from API on mount
+  // Load game state and spin history from API on mount
   useEffect(() => {
     if (!userId) return;
 
     const loadGameState = async () => {
       try {
+        // Load game state
         const data = await gameAPI.getState();
+        
+        // Load spin history
+        let history: SpinHistory[] = [];
+        try {
+          const historyData = await gameAPI.getSpinHistory(100);
+          // Convert backend format (camelCase) to frontend format (snake_case)
+          history = historyData.map((item: any) => ({
+            id: item._id || item.id || Date.now().toString() + Math.random(),
+            timestamp: item.timestamp || Date.now(),
+            user_name: item.userName || item.user_name || 'Anonymous',
+            role_id: item.roleId || item.role_id || null,
+            display_value: item.displayValue !== undefined && item.displayValue !== null ? item.displayValue : (item.display_value !== undefined && item.display_value !== null ? item.display_value : 0),
+            real_value: item.realValue !== undefined && item.realValue !== null ? item.realValue : (item.real_value !== undefined && item.real_value !== null ? item.real_value : 0),
+            scenario_used: item.scenarioUsed || item.scenario_used || 'unknown',
+          }));
+        } catch (historyError) {
+          console.error('Error loading spin history:', historyError);
+          // Continue without history if it fails
+        }
+
         setState({
           roleInventories: data.roleInventories || createInitialRoleInventories(),
-          spinHistory: [], // We'll load history separately if needed
+          spinHistory: history,
           riggingConfig: data.riggingConfig || initialState.riggingConfig,
           isAdminAuthenticated: false,
         });
@@ -154,7 +179,31 @@ export const GameProvider = ({ children, userId, userName }: { children: ReactNo
     const { roleInventories, riggingConfig } = state;
     const roleInventory = roleInventories[roleId] || [];
 
-    const availableDenoms = roleInventory.filter((d) => d.quantity > 0);
+    // Tính budget còn lại cho role này
+    const roleBudget = getRoleBudget(roleId);
+    const roleSpent = getRoleSpent(roleId);
+    const roleRemaining = roleBudget - roleSpent;
+
+    // Kiểm tra budget còn lại
+    if (roleRemaining <= 0) {
+      const roleName = ROLES.find((r) => r.id === roleId)?.name || roleId;
+      return {
+        displayValue: 0,
+        realValue: 0,
+        scenario: 'budget_exhausted',
+        isTroll: false,
+        isEmpty: true,
+        errorMessage: `Tiền cho ${roleName} đã hết, vui lòng nạp thêm!`,
+      };
+    }
+
+    // Tính available denominations dựa trên budget còn lại
+    // Chỉ lấy các mệnh giá có initial_quantity > 0 và có thể quay được
+    const availableDenoms = roleInventory.filter((d) => {
+      if (d.initial_quantity <= 0) return false;
+      // Kiểm tra xem còn đủ budget để quay mệnh giá này không
+      return roleRemaining >= d.value;
+    });
 
     if (availableDenoms.length === 0) {
       const history: SpinHistory = {
@@ -227,12 +276,22 @@ export const GameProvider = ({ children, userId, userName }: { children: ReactNo
     // Check if this triggers a re-spin (1k or 2k for Kids or Younger roles)
     const requiresReSpin = (roleId === 'kids' || roleId === 'younger') && (realValue === 1000 || realValue === 2000);
 
-    setState((prev) => {
-      const roleInv = prev.roleInventories[roleId] || [];
-      const newRoleInv = roleInv.map((d) =>
-        d.value === realValue ? { ...d, quantity: d.quantity - 1 } : d
-      );
+    // Kiểm tra lại budget trước khi lưu (double check)
+    const finalRemaining = roleRemaining - realValue;
+    if (finalRemaining < 0) {
+      const roleName = ROLES.find((r) => r.id === roleId)?.name || roleId;
+      return {
+        displayValue: 0,
+        realValue: 0,
+        scenario: 'budget_exhausted',
+        isTroll: false,
+        isEmpty: true,
+        errorMessage: `Tiền cho ${roleName} đã hết, vui lòng nạp thêm!`,
+      };
+    }
 
+    setState((prev) => {
+      // KHÔNG giảm quantity - giữ nguyên budget
       const history: SpinHistory = {
         id: Date.now().toString(),
         timestamp: Date.now(),
@@ -243,7 +302,7 @@ export const GameProvider = ({ children, userId, userName }: { children: ReactNo
         scenario_used: scenario,
       };
 
-      // Save to API
+      // Save to API (fire and forget, but log errors)
       gameAPI.addSpinHistory({
         timestamp: history.timestamp,
         userName: history.user_name,
@@ -251,14 +310,14 @@ export const GameProvider = ({ children, userId, userName }: { children: ReactNo
         displayValue: history.display_value,
         realValue: history.real_value,
         scenarioUsed: history.scenario_used,
-      }).catch(err => console.error('Error saving spin history:', err));
+      }).catch(err => {
+        console.error('Error saving spin history:', err);
+      });
 
+      // Add to local state immediately (optimistic update)
+      // KHÔNG thay đổi roleInventories - giữ nguyên quantity
       return {
         ...prev,
-        roleInventories: {
-          ...prev.roleInventories,
-          [roleId]: newRoleInv,
-        },
         spinHistory: [history, ...prev.spinHistory],
         riggingConfig: {
           next_spin_mode: 'random',
@@ -279,11 +338,16 @@ export const GameProvider = ({ children, userId, userName }: { children: ReactNo
   };
 
   const weightedRandomPick = (denoms: Denomination[]): number => {
-    const totalWeight = denoms.reduce((sum, d) => sum + d.quantity, 0);
+    // Tính weight dựa trên budget còn lại, không phải quantity
+    // Weight = số tiền còn lại có thể quay được mệnh giá này
+    const totalWeight = denoms.reduce((sum, d) => {
+      // Tính số lần có thể quay mệnh giá này dựa trên initial_quantity
+      return sum + d.initial_quantity;
+    }, 0);
     let random = Math.random() * totalWeight;
 
     for (const denom of denoms) {
-      random -= denom.quantity;
+      random -= denom.initial_quantity;
       if (random <= 0) {
         return denom.value;
       }
@@ -314,7 +378,8 @@ export const GameProvider = ({ children, userId, userName }: { children: ReactNo
     let total = 0;
     Object.values(state.roleInventories).forEach((roleInv) => {
       roleInv.forEach((d) => {
-        total += d.value * d.quantity;
+        // Tính từ initial_quantity (budget ban đầu, không giảm)
+        total += d.value * d.initial_quantity;
       });
     });
     return total;
@@ -322,7 +387,46 @@ export const GameProvider = ({ children, userId, userName }: { children: ReactNo
 
   const getRoleBudget = (roleId: RoleId): number => {
     const roleInv = state.roleInventories[roleId] || [];
-    return roleInv.reduce((sum, d) => sum + d.value * d.quantity, 0);
+    // Budget = initial_quantity (không giảm)
+    return roleInv.reduce((sum, d) => sum + d.value * d.initial_quantity, 0);
+  };
+
+  const getRoleSpent = (roleId: RoleId): number => {
+    // Tính từ spin history
+    return state.spinHistory
+      .filter((log) => log.role_id === roleId)
+      .reduce((sum, log) => {
+        const value = log.real_value || 0;
+        return sum + value;
+      }, 0);
+  };
+
+  const getRoleRemaining = (roleId: RoleId): number => {
+    return getRoleBudget(roleId) - getRoleSpent(roleId);
+  };
+
+  const refreshSpinHistory = async (): Promise<void> => {
+    try {
+      const historyData = await gameAPI.getSpinHistory(100);
+      // Convert backend format (camelCase) to frontend format (snake_case)
+      const history: SpinHistory[] = historyData.map((item: any) => ({
+        id: item._id || item.id || Date.now().toString() + Math.random(),
+        timestamp: item.timestamp || Date.now(),
+        user_name: item.userName || item.user_name || 'Anonymous',
+        role_id: item.roleId || item.role_id || null,
+        display_value: item.displayValue !== undefined && item.displayValue !== null ? item.displayValue : (item.display_value !== undefined && item.display_value !== null ? item.display_value : 0),
+        real_value: item.realValue !== undefined && item.realValue !== null ? item.realValue : (item.real_value !== undefined && item.real_value !== null ? item.real_value : 0),
+        scenario_used: item.scenarioUsed || item.scenario_used || 'unknown',
+      }));
+
+      setState((prev) => ({
+        ...prev,
+        spinHistory: history,
+      }));
+    } catch (error) {
+      console.error('Error refreshing spin history:', error);
+      throw error;
+    }
   };
 
   if (loading) {
@@ -346,6 +450,9 @@ export const GameProvider = ({ children, userId, userName }: { children: ReactNo
         resetRoleInventory,
         getTotalMoneyInSystem,
         getRoleBudget,
+        getRoleSpent,
+        getRoleRemaining,
+        refreshSpinHistory,
       }}
     >
       {children}

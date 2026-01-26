@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useGame } from '../context/GameContext';
+import { useUser } from '../context/UserContext';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Lock, Unlock, RefreshCw, Shield, Skull, DollarSign } from 'lucide-react';
+import { Lock, Unlock, RefreshCw, Shield, Skull, DollarSign, LogOut } from 'lucide-react';
 import { ROLES, RoleId, ALL_DENOMINATIONS } from '../types';
 
 export const AdminPanel = () => {
@@ -15,7 +16,11 @@ export const AdminPanel = () => {
     resetRoleInventory,
     getTotalMoneyInSystem,
     getRoleBudget,
+    getRoleSpent,
+    getRoleRemaining,
+    refreshSpinHistory,
   } = useGame();
+  const { signOut } = useUser();
 
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
@@ -41,7 +46,10 @@ export const AdminPanel = () => {
     return `${(value / 1000).toFixed(0)}k`;
   };
 
-  const formatFullMoney = (value: number) => {
+  const formatFullMoney = (value: number | undefined | null) => {
+    if (value === undefined || value === null || isNaN(value)) {
+      return '0đ';
+    }
     return value.toLocaleString('vi-VN') + 'đ';
   };
 
@@ -125,13 +133,28 @@ export const AdminPanel = () => {
             </h1>
             <p className="text-gray-400 mt-1">Welcome back, {userName || 'Admin'}</p>
           </div>
-          <button
-            onClick={adminLogout}
-            className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors"
-          >
-            <Unlock className="w-5 h-5" />
-            Logout
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={adminLogout}
+              className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors"
+              title="Thoát khỏi Admin Panel"
+            >
+              <Unlock className="w-5 h-5" />
+              Thoát Admin
+            </button>
+            <button
+              onClick={async () => {
+                await signOut();
+                window.history.pushState({}, '', '/');
+                window.dispatchEvent(new PopStateEvent('popstate'));
+              }}
+              className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"
+              title="Đăng xuất khỏi hệ thống"
+            >
+              <LogOut className="w-5 h-5" />
+              Đăng xuất
+            </button>
+          </div>
         </div>
 
         {/* Main Tab Switcher */}
@@ -263,6 +286,92 @@ export const AdminPanel = () => {
                   </button>
                 </motion.div>
               </AnimatePresence>
+
+              {/* Money Spent Summary */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+                className="mt-6 bg-gradient-to-r from-red-900/50 to-orange-900/50 border-2 border-red-500 rounded-lg p-6"
+              >
+                <h2 className="text-2xl font-bold text-red-400 mb-4 flex items-center gap-2">
+                  💸 TỔNG TIỀN ĐÃ LÌ XÌ
+                </h2>
+                
+                {/* Total Spent (All Roles) */}
+                <div className="mb-4 bg-black/30 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-gray-300 font-semibold">Tổng đã lì xì (Tất cả roles):</p>
+                    <p className="text-red-400 font-bold text-xl">
+                      {formatFullMoney(
+                        state.spinHistory.reduce((sum, log) => {
+                          const value = log.real_value || 0;
+                          return sum + value;
+                        }, 0)
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <p className="text-gray-300 font-semibold">Tổng budget ban đầu:</p>
+                    <p className="text-green-400 font-bold text-xl">
+                      {formatFullMoney(
+                        Object.keys(state.roleInventories).reduce((sum, roleId) => {
+                          return sum + getRoleBudget(roleId as RoleId);
+                        }, 0)
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-700">
+                    <p className="text-gray-300 font-semibold">Còn lại:</p>
+                    <p className="text-yellow-400 font-bold text-xl">
+                      {formatFullMoney(
+                        Object.keys(state.roleInventories).reduce((sum, roleId) => {
+                          return sum + getRoleRemaining(roleId as RoleId);
+                        }, 0)
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Spent by Role */}
+                <div className="space-y-2">
+                  <p className="text-gray-300 font-semibold mb-2">Đã lì xì theo từng role:</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {ROLES.map((role) => {
+                      const roleSpent = getRoleSpent(role.id);
+                      const roleBudget = getRoleBudget(role.id);
+                      const roleRemaining = getRoleRemaining(role.id);
+                      
+                      return (
+                        <div
+                          key={role.id}
+                          className="bg-gray-900/50 border border-gray-700 rounded-lg p-3"
+                        >
+                          <p className="text-white font-bold text-sm mb-1">{role.name}</p>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-gray-400">Đã lì xì:</span>
+                            <span className="text-red-400 font-bold">
+                              {formatFullMoney(roleSpent)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-gray-400">Budget:</span>
+                            <span className="text-green-400 font-bold">
+                              {formatFullMoney(roleBudget)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs mt-1 pt-1 border-t border-gray-700">
+                            <span className="text-gray-400">Còn lại:</span>
+                            <span className={`font-bold ${roleRemaining >= 0 ? 'text-yellow-400' : 'text-red-500'}`}>
+                              {formatFullMoney(roleRemaining)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </motion.div>
             </motion.div>
           )}
 
@@ -414,7 +523,22 @@ export const AdminPanel = () => {
           animate={{ y: 0, opacity: 1 }}
           className="bg-black/50 backdrop-blur-lg border-2 border-green-500 rounded-xl p-6 mt-6"
         >
-          <h2 className="text-2xl font-bold text-green-400 mb-4">📜 SPIN HISTORY</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-bold text-green-400">📜 SPIN HISTORY</h2>
+            <button
+              onClick={async () => {
+                try {
+                  await refreshSpinHistory();
+                } catch (error) {
+                  alert('Lỗi khi tải lại lịch sử quay');
+                }
+              }}
+              className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg transition-colors text-sm"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Làm mới
+            </button>
+          </div>
           <div className="max-h-96 overflow-y-auto space-y-2">
             {state.spinHistory.length === 0 ? (
               <p className="text-gray-500 text-center py-8">No spins yet...</p>
@@ -443,10 +567,10 @@ export const AdminPanel = () => {
                       </>
                     ) : (
                       <p className="text-green-400 font-bold">
-                        {log.real_value === 0 ? 'EMPTY' : formatFullMoney(log.real_value)}
+                        {(log.real_value === 0 || !log.real_value) ? 'EMPTY' : formatFullMoney(log.real_value)}
                       </p>
                     )}
-                    <p className="text-gray-500 text-xs">{log.scenario_used}</p>
+                    <p className="text-gray-500 text-xs">{log.scenario_used || 'N/A'}</p>
                   </div>
                 </div>
               ))

@@ -14,8 +14,31 @@ function AppContent() {
       setCurrentPath(window.location.pathname);
     };
 
+    // Listen for navigation changes
+    const handleLocationChange = () => {
+      setCurrentPath(window.location.pathname);
+    };
+
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    // Listen for pushState/replaceState (programmatic navigation)
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+    
+    history.pushState = function(...args) {
+      originalPushState.apply(history, args);
+      handleLocationChange();
+    };
+    
+    history.replaceState = function(...args) {
+      originalReplaceState.apply(history, args);
+      handleLocationChange();
+    };
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      history.pushState = originalPushState;
+      history.replaceState = originalReplaceState;
+    };
   }, []);
 
   if (loading) {
@@ -26,6 +49,22 @@ function AppContent() {
     );
   }
 
+  // Nếu vào /admin và chưa đăng nhập → hiện Auth
+  // Nếu vào /admin và đã đăng nhập → hiện AdminPanel (chỉ cần PIN)
+  if (currentPath === '/admin') {
+    if (!user) {
+      return <Auth />;
+    }
+    // Đã đăng nhập → hiện AdminPanel (sẽ check PIN bên trong)
+    const displayName = profile?.displayName || user?.displayName || user?.email || 'User';
+    return (
+      <GameProvider userId={user.id} userName={displayName}>
+        <AdminPanel />
+      </GameProvider>
+    );
+  }
+
+  // Trang chính (SlotMachine) - yêu cầu đăng nhập
   if (!user) {
     return <Auth />;
   }
@@ -34,7 +73,7 @@ function AppContent() {
   
   return (
     <GameProvider userId={user.id} userName={displayName}>
-      {currentPath === '/admin' ? <AdminPanel /> : <SlotMachine />}
+      <SlotMachine />
     </GameProvider>
   );
 }

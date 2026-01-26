@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGame } from '../context/GameContext';
+import { useUser } from '../context/UserContext';
 import confetti from 'canvas-confetti';
-import { Sparkles, AlertCircle } from 'lucide-react';
+import { Sparkles, AlertCircle, LogOut } from 'lucide-react';
 import { ROLES, RoleId, ALL_DENOMINATIONS } from '../types';
 
 const playSpinSound = () => console.log('🎵 Spin sound');
@@ -26,6 +27,7 @@ const getBillColor = (value: number): string => {
 
 export const SlotMachine = () => {
   const { performSpin, userName: contextUserName } = useGame();
+  const { signOut } = useUser();
   const [userName, setUserName] = useState('');
   const [selectedRole, setSelectedRole] = useState<RoleId | ''>('');
   const [isSpinning, setIsSpinning] = useState(false);
@@ -338,6 +340,12 @@ export const SlotMachine = () => {
     const result = performSpin(userName.trim(), roleId);
     setCurrentResult(result);
     
+    // Kiểm tra lỗi budget hết
+    if (result.errorMessage) {
+      alert(result.errorMessage);
+      return;
+    }
+    
     // BƯỚC 2: Hiển thị Scratch Card
     setIsSpinning(true);
     setCurrentPhase(isReSpin ? 'respin_spinning' : 'spinning');
@@ -643,12 +651,30 @@ export const SlotMachine = () => {
       >
         <div className="text-center">
           <span className="text-6xl">🌸</span>
-          <a
-            href="/admin"
-            className="text-white/30 hover:text-white/60 text-sm transition-colors block mt-2"
-          >
-            🔐 Admin Access
-          </a>
+          <div className="flex flex-col items-center gap-2 mt-2">
+            <a
+              href="/admin"
+              onClick={(e) => {
+                e.preventDefault();
+                window.history.pushState({}, '', '/admin');
+                window.dispatchEvent(new PopStateEvent('popstate'));
+              }}
+              className="text-white/30 hover:text-white/60 text-sm transition-colors"
+            >
+              🔐 Admin Access
+            </a>
+            <button
+              onClick={async () => {
+                await signOut();
+                window.history.pushState({}, '', '/');
+                window.dispatchEvent(new PopStateEvent('popstate'));
+              }}
+              className="flex items-center gap-1 text-white/30 hover:text-white/60 text-sm transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              Đăng xuất
+            </button>
+          </div>
         </div>
       </motion.div>
     </div>
