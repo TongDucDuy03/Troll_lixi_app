@@ -57,6 +57,7 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
     "an khang thịnh vượng",
     "sức khỏe dồi dào",
     "lộc lá đầy nhà",
+    "8386 nhé",
     "tình duyên phơi phới",
     "công việc thuận lợi",
     "đẹp trai/xinh gái hơn",
@@ -420,7 +421,10 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
         animate={{ y: 0, opacity: 1 }}
         className="text-center mb-8 z-10"
       >
-        <h1 className="text-5xl md:text-7xl font-black text-yellow-400 mb-2 drop-shadow-lg">
+        <h1
+          className="font-black text-yellow-400 mb-2 drop-shadow-lg whitespace-nowrap leading-none mx-auto max-w-full"
+          style={{ fontSize: 'clamp(28px, 7vw, 72px)' }}
+        >
           🧧 Lì Xì May Mắn 🧧
         </h1>
         <p className="text-white/90 text-lg md:text-xl max-w-2xl mx-auto">
@@ -565,7 +569,7 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
                   </h2>
                   
                   {/* Scratch Card */}
-                  <div className="relative">3
+                  <div className="relative">
                     {/* Background với số tiền - Gradient với hiệu ứng ánh kim */}
                     <div 
                       className="w-80 h-48 md:w-96 md:h-56 rounded-xl flex items-center justify-center border-4 border-yellow-400 shadow-xl"
