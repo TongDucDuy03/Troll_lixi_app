@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { gameAPI } from '../utils/api';
 import { GameState, Denomination, SpinHistory, RiggingConfig, RiggingMode, RoleId, ROLES, RoleInventory, ALL_DENOMINATIONS } from '../types';
 
@@ -65,6 +65,7 @@ const GameContext = createContext<GameContextType | undefined>(undefined);
 export const GameProvider = ({ children, userId, userName, isSharedMode = false, shareToken = '' }: { children: ReactNode; userId: string; userName: string; isSharedMode?: boolean; shareToken?: string }) => {
   const [state, setState] = useState<GameState>(initialState);
   const [loading, setLoading] = useState(true);
+  const isProcessingSpinRef = useRef(false); // Prevent duplicate spin processing
 
   // Load game state and spin history from API on mount
   useEffect(() => {
@@ -284,16 +285,32 @@ export const GameProvider = ({ children, userId, userName, isSharedMode = false,
   };
 
   const performSpin = (userName: string, roleId: RoleId): SpinResult => {
-    const { roleInventories, riggingConfig } = state;
-    const roleInventory = roleInventories[roleId] || [];
-    
-    console.log('🎰 performSpin called:', {
-      userName,
-      roleId,
-      riggingMode: riggingConfig.next_spin_mode,
-      targetValue: riggingConfig.target_value,
-      fakeValue: riggingConfig.fake_value,
-    });
+    // Prevent duplicate spin processing
+    if (isProcessingSpinRef.current) {
+      console.warn('⚠️ performSpin already in progress, ignoring duplicate call');
+      return {
+        displayValue: 0,
+        realValue: 0,
+        scenario: 'duplicate',
+        isTroll: false,
+        isEmpty: true,
+        errorMessage: 'Đang xử lý lượt quay trước đó, vui lòng đợi...',
+      };
+    }
+
+    isProcessingSpinRef.current = true;
+
+    try {
+      const { roleInventories, riggingConfig } = state;
+      const roleInventory = roleInventories[roleId] || [];
+      
+      console.log('🎰 performSpin called:', {
+        userName,
+        roleId,
+        riggingMode: riggingConfig.next_spin_mode,
+        targetValue: riggingConfig.target_value,
+        fakeValue: riggingConfig.fake_value,
+      });
 
     // Tính budget còn lại cho role này
     const roleBudget = getRoleBudget(roleId);
@@ -303,6 +320,7 @@ export const GameProvider = ({ children, userId, userName, isSharedMode = false,
     // Kiểm tra budget còn lại
     if (roleRemaining <= 0) {
       const roleName = ROLES.find((r) => r.id === roleId)?.name || roleId;
+      isProcessingSpinRef.current = false; // Reset flag before early return
       return {
         displayValue: 0,
         realValue: 0,
@@ -328,52 +346,14 @@ export const GameProvider = ({ children, userId, userName, isSharedMode = false,
       return roleRemaining >= d.value;
     });
 
-    if (availableDenoms.length === 0) {
-      const history: SpinHistory = {
-        id: Date.now().toString(),
-        timestamp: Date.now(),
-        user_name: userName,
-        role_id: roleId,
-        display_value: 0,
-        real_value: 0,
-        scenario_used: 'empty',
-      };
-      
-      // Save to API (use shared API if in shared mode)
-      if (isSharedMode && shareToken) {
-        gameAPI.addSharedSpinHistory(shareToken, {
-          timestamp: history.timestamp,
-          userName: history.user_name,
-          roleId: history.role_id,
-          displayValue: history.display_value,
-          realValue: history.real_value,
-          scenarioUsed: history.scenario_used,
-        }).catch(err => console.error('Error saving shared spin history:', err));
-      } else {
-        gameAPI.addSpinHistory({
-          timestamp: history.timestamp,
-          userName: history.user_name,
-          roleId: history.role_id,
-          displayValue: history.display_value,
-          realValue: history.real_value,
-          scenarioUsed: history.scenario_used,
-        }).catch(err => console.error('Error saving spin history:', err));
-      }
-
-      return {
-        displayValue: 0,
-        realValue: 0,
-        scenario: 'empty',
-        isTroll: false,
-        isEmpty: true,
-      };
-    }
-
     let realValue: number;
     let displayValue: number;
     let scenario: string;
     let isTroll = false;
+    let shouldAutoSwitchToHonest = false;
 
+    // Xử lý force mode TRƯỚC KHI check availableDenoms.length === 0
+    // Để nếu force không thể apply nhưng vẫn còn mệnh giá khác, sẽ quay random
     if (riggingConfig.next_spin_mode === 'force_value' && riggingConfig.target_value) {
       console.log('🎯 Force mode check:', {
         roleId,
@@ -392,7 +372,10 @@ export const GameProvider = ({ children, userId, userName, isSharedMode = false,
       // Kiểm tra budget còn lại có đủ cho target_value không
       const canAffordTarget = roleRemaining >= riggingConfig.target_value;
       
-      if (targetDenom && targetDenom.initial_quantity > 0 && remainingQuantity > 0 && canAffordTarget) {
+      // Kiểm tra target_value có trong availableDenoms không (đã filter theo budget và remaining quantity)
+      const targetInAvailable = availableDenoms.some((d) => d.value === riggingConfig.target_value);
+      
+      if (targetDenom && targetDenom.initial_quantity > 0 && remainingQuantity > 0 && canAffordTarget && targetInAvailable) {
         // Force mode: người này chắc chắn nhận giá trị này
         realValue = targetDenom.value;
         displayValue = realValue;
@@ -405,23 +388,54 @@ export const GameProvider = ({ children, userId, userName, isSharedMode = false,
           remainingQuantity,
         });
       } else {
-        // Fallback: nếu không thể force, quay random
-        // Đồng thời auto chuyển rigging mode về HONEST (random)
-        setRiggingMode('random');
-        console.warn('⚠️ Force mode cannot be applied, falling back to random:', {
+        // Force không thể apply: mệnh giá đã hết tờ hoặc hết budget
+        // Tự động chuyển sang honest mode và quay random trong các mệnh giá còn lại
+        // KHÔNG gọi setRiggingMode ở đây vì sẽ được reset ở cuối performSpin
+        shouldAutoSwitchToHonest = true;
+        console.warn('⚠️ Force mode cannot be applied, switching to honest and picking random:', {
           roleId,
           targetValue: riggingConfig.target_value,
           targetDenom: targetDenom ? { value: targetDenom.value, initial_quantity: targetDenom.initial_quantity } : 'not found',
           hasInitialQuantity: targetDenom?.initial_quantity > 0,
           remainingQuantity,
           canAfford: canAffordTarget,
+          targetInAvailable,
           roleRemaining,
+          availableDenomsCount: availableDenoms.length,
           availableDenoms: availableDenoms.map(d => ({ value: d.value, initial_quantity: d.initial_quantity })),
         });
-        realValue = weightedRandomPick(availableDenoms);
-        displayValue = realValue;
-        scenario = 'random';
+        
+        // Nếu vẫn còn mệnh giá khác, quay random
+        if (availableDenoms.length > 0) {
+          realValue = weightedRandomPick(availableDenoms);
+          displayValue = realValue;
+          scenario = 'random';
+        } else {
+          // Thực sự không còn mệnh giá nào → không cho quay
+          const roleName = ROLES.find((r) => r.id === roleId)?.name || roleId;
+          isProcessingSpinRef.current = false; // Reset flag before early return
+          return {
+            displayValue: 0,
+            realValue: 0,
+            scenario: 'empty',
+            isTroll: false,
+            isEmpty: true,
+            errorMessage: `Tất cả mệnh giá cho ${roleName} đã hết, vui lòng nạp thêm!`,
+          };
+        }
       }
+    } else if (availableDenoms.length === 0) {
+      // Không phải force mode và không còn mệnh giá nào → không cho quay
+      const roleName = ROLES.find((r) => r.id === roleId)?.name || roleId;
+      isProcessingSpinRef.current = false; // Reset flag before early return
+      return {
+        displayValue: 0,
+        realValue: 0,
+        scenario: 'empty',
+        isTroll: false,
+        isEmpty: true,
+        errorMessage: `Tất cả mệnh giá cho ${roleName} đã hết, vui lòng nạp thêm!`,
+      };
     } else if (
       riggingConfig.next_spin_mode === 'troll_fake_high_to_low' &&
       riggingConfig.fake_value &&
@@ -436,25 +450,52 @@ export const GameProvider = ({ children, userId, userName, isSharedMode = false,
       // Kiểm tra budget còn lại có đủ cho target_value không
       const canAffordTarget = roleRemaining >= riggingConfig.target_value;
       
-      if (targetDenom && targetDenom.initial_quantity > 0 && remainingQuantity > 0 && canAffordTarget) {
+      // Kiểm tra target_value có trong availableDenoms không (đã filter theo budget và remaining quantity)
+      const targetInAvailable = availableDenoms.some((d) => d.value === riggingConfig.target_value);
+      
+      if (targetDenom && targetDenom.initial_quantity > 0 && remainingQuantity > 0 && canAffordTarget && targetInAvailable) {
         // Apply troll mode
         displayValue = riggingConfig.fake_value;
         realValue = riggingConfig.target_value;
         scenario = 'troll_fake_to_real';
         isTroll = true;
       } else {
-        // Fallback: nếu không thể apply troll, quay random
-        console.warn('Troll mode cannot be applied:', {
-          targetDenom: targetDenom ? 'found' : 'not found',
+        // Troll không thể apply: mệnh giá đã hết tờ hoặc hết budget
+        // Tự động chuyển sang honest mode và quay random trong các mệnh giá còn lại
+        // KHÔNG gọi setRiggingMode ở đây vì sẽ được reset ở cuối performSpin
+        shouldAutoSwitchToHonest = true;
+        console.warn('⚠️ Troll mode cannot be applied, switching to honest and picking random:', {
+          roleId,
+          targetValue: riggingConfig.target_value,
+          fakeValue: riggingConfig.fake_value,
+          targetDenom: targetDenom ? { value: targetDenom.value, initial_quantity: targetDenom.initial_quantity } : 'not found',
           hasInitialQuantity: targetDenom?.initial_quantity > 0,
           remainingQuantity,
           canAfford: canAffordTarget,
+          targetInAvailable,
           roleRemaining,
-          targetValue: riggingConfig.target_value,
+          availableDenomsCount: availableDenoms.length,
+          availableDenoms: availableDenoms.map(d => ({ value: d.value, initial_quantity: d.initial_quantity })),
         });
-        realValue = weightedRandomPick(availableDenoms);
-        displayValue = realValue;
-        scenario = 'random';
+        
+        // Nếu vẫn còn mệnh giá khác, quay random
+        if (availableDenoms.length > 0) {
+          realValue = weightedRandomPick(availableDenoms);
+          displayValue = realValue;
+          scenario = 'random';
+        } else {
+          // Thực sự không còn mệnh giá nào → không cho quay
+          const roleName = ROLES.find((r) => r.id === roleId)?.name || roleId;
+          isProcessingSpinRef.current = false; // Reset flag before early return
+          return {
+            displayValue: 0,
+            realValue: 0,
+            scenario: 'empty',
+            isTroll: false,
+            isEmpty: true,
+            errorMessage: `Tất cả mệnh giá cho ${roleName} đã hết, vui lòng nạp thêm!`,
+          };
+        }
       }
     } else {
       realValue = weightedRandomPick(availableDenoms);
@@ -469,6 +510,7 @@ export const GameProvider = ({ children, userId, userName, isSharedMode = false,
     const finalRemaining = roleRemaining - realValue;
     if (finalRemaining < 0) {
       const roleName = ROLES.find((r) => r.id === roleId)?.name || roleId;
+      isProcessingSpinRef.current = false; // Reset flag before early return
       return {
         displayValue: 0,
         realValue: 0,
@@ -481,8 +523,10 @@ export const GameProvider = ({ children, userId, userName, isSharedMode = false,
 
     setState((prev) => {
       // KHÔNG giảm quantity - giữ nguyên budget
+      // Tạo unique ID để tránh duplicate (timestamp + random + index)
+      const uniqueId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${prev.spinHistory.length}`;
       const history: SpinHistory = {
-        id: Date.now().toString(),
+        id: uniqueId,
         timestamp: Date.now(),
         user_name: userName,
         role_id: roleId,
@@ -490,6 +534,16 @@ export const GameProvider = ({ children, userId, userName, isSharedMode = false,
         real_value: realValue,
         scenario_used: scenario,
       };
+
+      // Debug: Log để kiểm tra xem setState có bị gọi nhiều lần không
+      console.log('💾 Saving spin history:', {
+        id: uniqueId,
+        userName,
+        roleId,
+        realValue,
+        scenario,
+        currentHistoryCount: prev.spinHistory.length,
+      });
 
       // Save to API (use shared API if in shared mode)
       if (isSharedMode && shareToken) {
@@ -519,6 +573,24 @@ export const GameProvider = ({ children, userId, userName, isSharedMode = false,
       // Add to local state immediately (optimistic update)
       // KHÔNG thay đổi roleInventories - giữ nguyên quantity
       // Reset riggingConfig sau khi đã quay (force/troll chỉ áp dụng 1 lần)
+      
+      // Check for duplicate: nếu đã có history với cùng timestamp, userName, roleId, realValue trong vòng 1 giây → skip
+      const recentDuplicate = prev.spinHistory.find((h) => 
+        Math.abs(h.timestamp - history.timestamp) < 1000 &&
+        h.user_name === history.user_name &&
+        h.role_id === history.role_id &&
+        h.real_value === history.real_value
+      );
+      
+      if (recentDuplicate) {
+        console.warn('⚠️ Duplicate history detected, skipping:', {
+          existing: recentDuplicate,
+          new: history,
+        });
+        // Return unchanged state to prevent duplicate
+        return prev;
+      }
+      
       console.log('🔄 Resetting riggingConfig after spin');
       return {
         ...prev,
@@ -531,14 +603,20 @@ export const GameProvider = ({ children, userId, userName, isSharedMode = false,
       };
     });
 
-    return {
-      displayValue,
-      realValue,
-      scenario,
-      isTroll,
-      isEmpty: false,
-      requiresReSpin,
-    };
+      return {
+        displayValue,
+        realValue,
+        scenario,
+        isTroll,
+        isEmpty: false,
+        requiresReSpin,
+      };
+    } finally {
+      // Reset processing flag after a short delay to allow state update
+      setTimeout(() => {
+        isProcessingSpinRef.current = false;
+      }, 100);
+    }
   };
 
   const weightedRandomPick = (denoms: Denomination[]): number => {

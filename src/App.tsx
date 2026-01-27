@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { UserProvider, useUser } from './context/UserContext';
 import { GameProvider } from './context/GameContext';
+import { AudioProvider } from './context/AudioContext';
 import { SlotMachine } from './components/SlotMachine';
 import { AdminPanel } from './components/AdminPanel';
 import { Auth } from './components/Auth';
 import { gameAPI } from './utils/api';
+import { audioManifest } from './utils/audioManifest';
 
 function AppContent() {
   const { user, profile, loading } = useUser();
@@ -140,7 +142,9 @@ function SharedGameView({ shareToken }: { shareToken: string }) {
 function App() {
   return (
     <UserProvider>
-      <AppContent />
+      <AudioProvider manifest={audioManifest}>
+        <AppContent />
+      </AudioProvider>
     </UserProvider>
   );
 }

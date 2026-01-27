@@ -2,13 +2,10 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGame } from '../context/GameContext';
 import { useUser } from '../context/UserContext';
+import { useAudio, SoundToggle } from '../context/AudioContext';
 import confetti from 'canvas-confetti';
 import { Sparkles, AlertCircle, LogOut, Copy, Check } from 'lucide-react';
 import { ROLES, RoleId, ALL_DENOMINATIONS } from '../types';
-
-const playSpinSound = () => console.log('🎵 Spin sound');
-const playWinSound = () => console.log('🎵 Win sound');
-const playFailSound = () => console.log('🎵 Fail sound');
 
 const getBillColor = (value: number): string => {
   const colors: { [key: number]: string } = {
@@ -28,6 +25,7 @@ const getBillColor = (value: number): string => {
 export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean } = {}) => {
   const { performSpin, userName: contextUserName } = useGame();
   const { signOut, user } = useUser();
+  const { play, playLoop, stop, stopLoop, unlock } = useAudio();
   const [userName, setUserName] = useState('');
   const [selectedRole, setSelectedRole] = useState<RoleId | ''>('');
   const [isSpinning, setIsSpinning] = useState(false);
@@ -278,6 +276,11 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
     const progress = (transparentCount / (sampleSize * sampleSize)) * 100;
     setScratchProgress(progress);
     
+    // Audio: SCRATCH_START (throttled)
+    if (!scratchRevealed) {
+      play('scratch', { priority: 0 });
+    }
+    
     // Nếu gãi > 85%, reveal kết quả (phải gãi gần hết)
     if (progress > 85 && !scratchRevealed) {
       setScratchRevealed(true);
@@ -288,11 +291,13 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
         ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
       }
       
+      // Audio: SCRATCH_COMPLETE
       if (currentResult?.isEmpty || currentResult?.realValue === 0) {
-        playFailSound();
+        play('fail_bop', { priority: 2 });
       } else {
         fireConfetti('high');
-        playWinSound();
+        play('confetti_pop', { priority: 3 });
+        play('short_fanfare', { priority: 3, debounceMs: 300 });
       }
     }
   };
@@ -368,6 +373,11 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
   };
 
   const handleSpin = async (isReSpin: boolean = false) => {
+    // Prevent multiple simultaneous spins
+    if (isSpinning) {
+      return;
+    }
+
     if (!isReSpin && !userName.trim()) {
       alert('Nhập tên đi bạn ơi!');
       return;
@@ -377,6 +387,9 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
       alert('Chọn vai trò của bạn!');
       return;
     }
+
+    // Set spinning state FIRST to prevent duplicate calls
+    setIsSpinning(true);
 
     // RESET tất cả state scratch card khi bắt đầu lượt quay mới
     resetScratchCardState();
@@ -393,13 +406,17 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
     // Kiểm tra lỗi budget hết
     if (result.errorMessage) {
       alert(result.errorMessage);
+      setIsSpinning(false); // Reset spinning state on error
       return;
     }
     
     // BƯỚC 2: Hiển thị Scratch Card
-    setIsSpinning(true);
     setCurrentPhase(isReSpin ? 'respin_spinning' : 'spinning');
-    playSpinSound();
+    
+    // Audio: SPIN_START
+    unlock(); // Ensure audio is unlocked
+    play('whoosh', { priority: 2 });
+    playLoop('spin_loop', { priority: 0 });
 
     // Khởi tạo scratch card với kết quả
     setTimeout(() => {
@@ -407,6 +424,15 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
       setDisplayValue(result.displayValue);
       setRealValue(result.realValue);
       setScenario(result.scenario);
+      
+      // Audio: Stop spin loop, play result reveal
+      stopLoop('spin_loop');
+      if (result.isEmpty || result.realValue === 0) {
+        play('fail_bop', { priority: 2 });
+      } else {
+        play('win_jingle', { priority: 3 });
+        play('reveal_ting', { priority: 2, debounceMs: 200 });
+      }
     }, 500);
   };
 
@@ -415,6 +441,11 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-700 via-red-800 to-red-900 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+      {/* Sound Toggle - Top Right */}
+      <div className="absolute top-4 right-4 z-20">
+        <SoundToggle />
+      </div>
+
       <div className="absolute inset-0 opacity-10">
         {Array.from({ length: 20 }).map((_, i) => (
           <motion.div
@@ -512,7 +543,10 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
           </div>
 
           <motion.button
-            onClick={() => handleSpin(false)}
+            onClick={async () => {
+              await unlock(); // Unlock audio on first user interaction
+              handleSpin(false);
+            }}
             disabled={isSpinning}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
@@ -710,7 +744,10 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
                             </motion.p>
                           ) : (
                             <motion.button
-                              onClick={() => handleSpin(true)}
+                              onClick={async () => {
+                                await unlock();
+                                handleSpin(true);
+                              }}
                               whileHover={{ scale: 1.05 }}
                               whileTap={{ scale: 0.95 }}
                               className="mt-4 w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-black text-xl py-4 rounded-xl shadow-lg transition-all"
