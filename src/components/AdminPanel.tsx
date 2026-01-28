@@ -241,7 +241,7 @@ export const AdminPanel = () => {
               <span className="hidden sm:inline">Reset Tất Cả</span>
               <span className="sm:hidden">Reset</span>
             </button>
-            <button
+          <button
               onClick={() => {
                 adminLogout();
                 // Quay về trang quay lì xì (trang chính)
@@ -251,8 +251,8 @@ export const AdminPanel = () => {
               }}
               className="flex items-center justify-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors"
               title="Thoát khỏi Admin Panel và quay về trang quay lì xì"
-            >
-              <Unlock className="w-5 h-5" />
+          >
+            <Unlock className="w-5 h-5" />
               <span className="hidden sm:inline">Thoát Admin</span>
               <span className="sm:hidden">Thoát</span>
             </button>
@@ -300,22 +300,22 @@ export const AdminPanel = () => {
 
         <AnimatePresence mode="wait">
           {mainTab === 'budget' && (
-            <motion.div
+          <motion.div
               key="budget"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="bg-black/50 backdrop-blur-lg border-2 border-yellow-500 rounded-xl p-6"
-            >
+            className="bg-black/50 backdrop-blur-lg border-2 border-yellow-500 rounded-xl p-6"
+          >
               {/* Grand Total */}
               <div className="mb-6 bg-gradient-to-r from-green-900/50 to-blue-900/50 border-2 border-green-500 rounded-lg p-4">
                 <div className="flex items-center justify-between">
                   <h2 className="text-2xl font-bold text-green-400">💰 TOTAL CAMPAIGN BUDGET</h2>
                   <p className="text-green-400 font-bold text-3xl">
-                    {formatFullMoney(getTotalMoneyInSystem())}
-                  </p>
-                </div>
+                  {formatFullMoney(getTotalMoneyInSystem())}
+                </p>
               </div>
+            </div>
 
               {/* Role Tabs */}
               <div className="flex gap-2 mb-4 overflow-x-auto">
@@ -368,25 +368,25 @@ export const AdminPanel = () => {
                       const remainingCount = Math.max(0, initialQuantity - spentCount);
                       
                       return (
-                        <div
-                          key={denom.value}
+                <div
+                  key={denom.value}
                           className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 flex items-center justify-between"
-                        >
-                          <div className="flex-1">
-                            <p className="text-white font-bold text-lg">
-                              {formatFullMoney(denom.value)}
+                >
+                  <div className="flex-1">
+                    <p className="text-white font-bold text-lg">
+                      {formatFullMoney(denom.value)}
                             </p>
                             <div className="flex items-center gap-4 mt-1">
                               <p className="text-gray-400 text-sm">
                                 Ban đầu: <span className="text-green-400 font-bold">{initialQuantity}</span> tờ
-                              </p>
-                              <p className="text-gray-400 text-sm">
+                    </p>
+                    <p className="text-gray-400 text-sm">
                                 Đã quay: <span className="text-red-400 font-bold">{spentCount}</span> tờ
                               </p>
                               <p className="text-yellow-400 text-sm font-bold">
                                 Còn lại: <span className="text-yellow-300">{remainingCount}</span> tờ
-                              </p>
-                            </div>
+                    </p>
+                  </div>
                           </div>
                           <div className="flex items-center gap-3">
                             <input
@@ -404,20 +404,20 @@ export const AdminPanel = () => {
                               className="w-24 bg-gray-900 border-2 border-yellow-500 rounded-lg px-3 py-2 text-white text-center font-bold focus:outline-none focus:border-yellow-300"
                               title="Số tờ ban đầu (budget)"
                             />
-                          </div>
-                        </div>
+                  </div>
+                </div>
                       );
                     })}
-                  </div>
+            </div>
 
-                  <button
+            <button
                     onClick={() => resetRoleInventory(selectedRoleTab)}
-                    className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
-                  >
-                    <RefreshCw className="w-5 h-5" />
+              className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="w-5 h-5" />
                     RESET {ROLES.find((r) => r.id === selectedRoleTab)?.name.toUpperCase()} TO INITIAL
-                  </button>
-                </motion.div>
+            </button>
+          </motion.div>
               </AnimatePresence>
 
               {/* Money Spent Summary */}
@@ -509,144 +509,144 @@ export const AdminPanel = () => {
           )}
 
           {mainTab === 'rigging' && (
-            <motion.div
+          <motion.div
               key="rigging"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="bg-black/50 backdrop-blur-lg border-2 border-red-500 rounded-xl p-6"
-            >
-              <h2 className="text-2xl font-bold text-red-400 mb-4 flex items-center gap-2">
-                <Skull className="w-8 h-8" />
-                RIGGING CONSOLE
-              </h2>
-              <p className="text-gray-400 text-sm mb-4">
-                Control the fate of the next spin victim...
-              </p>
+            className="bg-black/50 backdrop-blur-lg border-2 border-red-500 rounded-xl p-6"
+          >
+            <h2 className="text-2xl font-bold text-red-400 mb-4 flex items-center gap-2">
+              <Skull className="w-8 h-8" />
+              RIGGING CONSOLE
+            </h2>
+            <p className="text-gray-400 text-sm mb-4">
+              Control the fate of the next spin victim...
+            </p>
 
-              <div className="flex gap-2 mb-4">
-                {(['honest', 'force', 'troll'] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setRiggingTab(tab)}
-                    className={`flex-1 py-2 rounded-lg font-bold transition-colors ${
-                      riggingTab === tab
-                        ? 'bg-red-600 text-white'
-                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                    }`}
-                  >
-                    {tab === 'honest' && '😇 Honest'}
-                    {tab === 'force' && '🎯 Force'}
-                    {tab === 'troll' && '😈 Troll'}
-                  </button>
-                ))}
-              </div>
+            <div className="flex gap-2 mb-4">
+              {(['honest', 'force', 'troll'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setRiggingTab(tab)}
+                  className={`flex-1 py-2 rounded-lg font-bold transition-colors ${
+                    riggingTab === tab
+                      ? 'bg-red-600 text-white'
+                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                  }`}
+                >
+                  {tab === 'honest' && '😇 Honest'}
+                  {tab === 'force' && '🎯 Force'}
+                  {tab === 'troll' && '😈 Troll'}
+                </button>
+              ))}
+            </div>
 
-              <AnimatePresence mode="wait">
-                {riggingTab === 'honest' && (
-                  <motion.div
-                    key="honest"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="bg-gray-900/50 rounded-lg p-4"
-                  >
-                    <p className="text-green-400 text-center">
-                      Random spin based on remaining stock weights.
-                      <br />
-                      <span className="text-gray-500 text-sm">(Boring but fair)</span>
-                    </p>
-                  </motion.div>
-                )}
+            <AnimatePresence mode="wait">
+              {riggingTab === 'honest' && (
+                <motion.div
+                  key="honest"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="bg-gray-900/50 rounded-lg p-4"
+                >
+                  <p className="text-green-400 text-center">
+                    Random spin based on remaining stock weights.
+                    <br />
+                    <span className="text-gray-500 text-sm">(Boring but fair)</span>
+                  </p>
+                </motion.div>
+              )}
 
-                {riggingTab === 'force' && (
-                  <motion.div
-                    key="force"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="bg-gray-900/50 rounded-lg p-4 space-y-3"
+              {riggingTab === 'force' && (
+                <motion.div
+                  key="force"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="bg-gray-900/50 rounded-lg p-4 space-y-3"
+                >
+                  <p className="text-yellow-400 text-sm">
+                    Next person will DEFINITELY get this value:
+                  </p>
+                  <select
+                    value={forceValue}
+                    onChange={(e) => setForceValue(Number(e.target.value))}
+                    className="w-full bg-gray-800 border-2 border-yellow-500 text-white rounded-lg px-4 py-2 font-bold"
                   >
-                    <p className="text-yellow-400 text-sm">
-                      Next person will DEFINITELY get this value:
-                    </p>
-                    <select
-                      value={forceValue}
-                      onChange={(e) => setForceValue(Number(e.target.value))}
-                      className="w-full bg-gray-800 border-2 border-yellow-500 text-white rounded-lg px-4 py-2 font-bold"
-                    >
                       {ALL_DENOMINATIONS.map((value) => (
                         <option key={value} value={value}>
                           {formatFullMoney(value)}
                         </option>
                       ))}
+                  </select>
+                </motion.div>
+              )}
+
+              {riggingTab === 'troll' && (
+                <motion.div
+                  key="troll"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="bg-gray-900/50 rounded-lg p-4 space-y-3"
+                >
+                  <div>
+                    <p className="text-purple-400 text-sm mb-2">
+                      🎭 FAKE: Show this at first:
+                    </p>
+                    <select
+                      value={trollFake}
+                      onChange={(e) => setTrollFake(Number(e.target.value))}
+                      className="w-full bg-gray-800 border-2 border-purple-500 text-white rounded-lg px-4 py-2 font-bold"
+                    >
+                        {ALL_DENOMINATIONS.map((value) => (
+                          <option key={value} value={value}>
+                            {formatFullMoney(value)}
+                        </option>
+                      ))}
                     </select>
-                  </motion.div>
-                )}
-
-                {riggingTab === 'troll' && (
-                  <motion.div
-                    key="troll"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="bg-gray-900/50 rounded-lg p-4 space-y-3"
-                  >
-                    <div>
-                      <p className="text-purple-400 text-sm mb-2">
-                        🎭 FAKE: Show this at first:
-                      </p>
-                      <select
-                        value={trollFake}
-                        onChange={(e) => setTrollFake(Number(e.target.value))}
-                        className="w-full bg-gray-800 border-2 border-purple-500 text-white rounded-lg px-4 py-2 font-bold"
-                      >
+                  </div>
+                  <div className="text-center text-red-400 font-bold text-2xl">⬇️</div>
+                  <div>
+                    <p className="text-red-400 text-sm mb-2">
+                      💀 REAL: Actually give them:
+                    </p>
+                    <select
+                      value={trollReal}
+                      onChange={(e) => setTrollReal(Number(e.target.value))}
+                      className="w-full bg-gray-800 border-2 border-red-500 text-white rounded-lg px-4 py-2 font-bold"
+                    >
                         {ALL_DENOMINATIONS.map((value) => (
                           <option key={value} value={value}>
                             {formatFullMoney(value)}
                           </option>
                         ))}
-                      </select>
-                    </div>
-                    <div className="text-center text-red-400 font-bold text-2xl">⬇️</div>
-                    <div>
-                      <p className="text-red-400 text-sm mb-2">
-                        💀 REAL: Actually give them:
-                      </p>
-                      <select
-                        value={trollReal}
-                        onChange={(e) => setTrollReal(Number(e.target.value))}
-                        className="w-full bg-gray-800 border-2 border-red-500 text-white rounded-lg px-4 py-2 font-bold"
-                      >
-                        {ALL_DENOMINATIONS.map((value) => (
-                          <option key={value} value={value}>
-                            {formatFullMoney(value)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                    </select>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-              <button
-                onClick={applyRigging}
-                className="w-full mt-4 bg-gradient-to-r from-red-600 to-purple-600 hover:from-red-700 hover:to-purple-700 text-white font-bold py-4 rounded-lg transition-all text-lg"
-              >
-                🎯 APPLY TO NEXT SPIN
-              </button>
+            <button
+              onClick={applyRigging}
+              className="w-full mt-4 bg-gradient-to-r from-red-600 to-purple-600 hover:from-red-700 hover:to-purple-700 text-white font-bold py-4 rounded-lg transition-all text-lg"
+            >
+              🎯 APPLY TO NEXT SPIN
+            </button>
 
-              <div className="mt-4 bg-yellow-900/30 border border-yellow-500/50 rounded-lg p-3">
-                <p className="text-yellow-400 text-xs">
+            <div className="mt-4 bg-yellow-900/30 border border-yellow-500/50 rounded-lg p-3">
+              <p className="text-yellow-400 text-xs">
                   <strong>Current Mode:</strong>{' '}
                   {state.riggingConfig.next_spin_mode === 'random'
                     ? '😇 Honest Random'
                     : state.riggingConfig.next_spin_mode === 'force_value'
                     ? '🎯 Forced Value'
                     : '😈 Troll Mode'}
-                </p>
-              </div>
-            </motion.div>
+              </p>
+            </div>
+          </motion.div>
           )}
         </AnimatePresence>
 

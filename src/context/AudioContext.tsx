@@ -146,14 +146,14 @@ export const SoundToggle: React.FC<{ className?: string }> = ({ className = '' }
   return (
     <button
       onClick={handleToggle}
-      className={`flex items-center justify-center gap-2 bg-black/40 hover:bg-black/60 backdrop-blur-lg border-2 border-yellow-400 rounded-lg px-4 py-2 transition-all ${className}`}
+      className={`flex items-center justify-center gap-2 bg-black/40 hover:bg-black/60 backdrop-blur-lg border border-yellow-400 sm:border-2 rounded-lg transition-all ${className}`}
       title={isEnabled ? 'Tắt âm thanh' : 'Bật âm thanh'}
       aria-label={isEnabled ? 'Tắt âm thanh' : 'Bật âm thanh'}
     >
       {isEnabled ? (
-        <Volume2 className="w-5 h-5 text-yellow-400" />
+        <Volume2 className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-400" />
       ) : (
-        <VolumeX className="w-5 h-5 text-gray-400" />
+        <VolumeX className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
       )}
       <span className="text-yellow-400 font-bold text-sm hidden sm:inline">
         {isEnabled ? 'Sound: On' : 'Sound: Off'}

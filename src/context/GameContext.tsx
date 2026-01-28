@@ -278,7 +278,7 @@ export const GameProvider = ({ children, userId, userName, isSharedMode = false,
       
       // Return updated state
       return {
-        ...prev,
+      ...prev,
         riggingConfig: newConfig,
       };
     });
@@ -407,9 +407,9 @@ export const GameProvider = ({ children, userId, userName, isSharedMode = false,
         
         // Nếu vẫn còn mệnh giá khác, quay random
         if (availableDenoms.length > 0) {
-          realValue = weightedRandomPick(availableDenoms);
-          displayValue = realValue;
-          scenario = 'random';
+        realValue = weightedRandomPick(availableDenoms);
+        displayValue = realValue;
+        scenario = 'random';
         } else {
           // Thực sự không còn mệnh giá nào → không cho quay
           const roleName = ROLES.find((r) => r.id === roleId)?.name || roleId;
@@ -480,9 +480,9 @@ export const GameProvider = ({ children, userId, userName, isSharedMode = false,
         
         // Nếu vẫn còn mệnh giá khác, quay random
         if (availableDenoms.length > 0) {
-          realValue = weightedRandomPick(availableDenoms);
-          displayValue = realValue;
-          scenario = 'random';
+        realValue = weightedRandomPick(availableDenoms);
+        displayValue = realValue;
+        scenario = 'random';
         } else {
           // Thực sự không còn mệnh giá nào → không cho quay
           const roleName = ROLES.find((r) => r.id === roleId)?.name || roleId;
@@ -603,14 +603,14 @@ export const GameProvider = ({ children, userId, userName, isSharedMode = false,
       };
     });
 
-      return {
-        displayValue,
-        realValue,
-        scenario,
-        isTroll,
-        isEmpty: false,
+    return {
+      displayValue,
+      realValue,
+      scenario,
+      isTroll,
+      isEmpty: false,
         requiresReSpin,
-      };
+    };
     } finally {
       // Reset processing flag after a short delay to allow state update
       setTimeout(() => {
@@ -713,8 +713,8 @@ export const GameProvider = ({ children, userId, userName, isSharedMode = false,
         scenario_used: item.scenarioUsed || item.scenario_used || 'unknown',
       }));
 
-      setState((prev) => ({
-        ...prev,
+    setState((prev) => ({
+      ...prev,
         spinHistory: history,
       }));
     } catch (error) {
@@ -736,7 +736,7 @@ export const GameProvider = ({ children, userId, userName, isSharedMode = false,
       const resetInventories: { [key: string]: Denomination[] } = {};
       Object.keys(state.roleInventories).forEach((roleId) => {
         resetInventories[roleId] = state.roleInventories[roleId as RoleId].map((d) => ({
-          ...d,
+        ...d,
           quantity: 0,
           initial_quantity: 0,
         }));

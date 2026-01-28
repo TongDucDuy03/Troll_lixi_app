@@ -6,6 +6,7 @@ import { useAudio, SoundToggle } from '../context/AudioContext';
 import confetti from 'canvas-confetti';
 import { Sparkles, AlertCircle, LogOut, Copy, Check } from 'lucide-react';
 import { ROLES, RoleId, ALL_DENOMINATIONS } from '../types';
+import { DonateButton } from './DonateButton';
 
 const getBillColor = (value: number): string => {
   const colors: { [key: number]: string } = {
@@ -321,9 +322,9 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
             // Giữ nguyên màn scratch card để hiện nút QUAY TIẾP
           } else {
             // Không hiển thị màn hình kết quả, chỉ reset về idle sau countdown
-            setTimeout(() => {
-              setIsSpinning(false);
-              setCurrentPhase('idle');
+    setTimeout(() => {
+      setIsSpinning(false);
+      setCurrentPhase('idle');
               resetScratchCardState();
             }, 500);
           }
@@ -409,7 +410,7 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
       setIsSpinning(false); // Reset spinning state on error
       return;
     }
-    
+
     // BƯỚC 2: Hiển thị Scratch Card
     setCurrentPhase(isReSpin ? 'respin_spinning' : 'spinning');
     
@@ -442,9 +443,12 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-700 via-red-800 to-red-900 flex flex-col items-center justify-center p-4 relative overflow-hidden">
       {/* Sound Toggle - Top Right */}
-      <div className="absolute top-4 right-4 z-20">
-        <SoundToggle />
+      <div className="absolute top-[calc(env(safe-area-inset-top,0px)+0.5rem)] right-2 sm:top-4 sm:right-4 z-20">
+        <SoundToggle className="px-2.5 py-2 sm:px-4 sm:py-2" />
       </div>
+
+      {/* Donate Button - Bottom Left */}
+      <DonateButton />
 
       <div className="absolute inset-0 opacity-10">
         {Array.from({ length: 20 }).map((_, i) => (
@@ -562,19 +566,19 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
           <p className="text-white/60 text-sm text-center mt-4">
             May mắn luôn đồng hành cùng bạn! (Hoặc không...)
           </p>
-          
+
           {/* Share Link Section */}
           {!isSharedMode && shareLink && (
             <div className="mt-4 p-4 bg-yellow-900/30 border-2 border-yellow-500 rounded-lg">
               <p className="text-yellow-400 text-sm font-bold mb-2 text-center">
                 🔗 Chia sẻ link quay lì xì
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                 <input
                   type="text"
                   value={shareLink}
                   readOnly
-                  className="flex-1 bg-gray-900 border-2 border-yellow-400 rounded-lg px-3 py-2 text-yellow-400 text-sm font-mono"
+                  className="w-full sm:flex-1 min-w-0 bg-gray-900 border-2 border-yellow-400 rounded-lg px-3 py-2 text-yellow-400 text-xs sm:text-sm font-mono overflow-hidden text-ellipsis"
                 />
                 <button
                   onClick={async () => {
@@ -586,7 +590,7 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
                       console.error('Failed to copy:', error);
                     }
                   }}
-                  className="flex items-center gap-1 bg-yellow-500 hover:bg-yellow-600 text-red-900 font-bold px-4 py-2 rounded-lg transition-colors"
+                  className="w-full sm:w-auto flex items-center justify-center gap-1 bg-yellow-500 hover:bg-yellow-600 text-red-900 font-bold px-4 py-2 rounded-lg transition-colors whitespace-nowrap"
                 >
                   {linkCopied ? (
                     <>
@@ -648,7 +652,7 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
                 animate={{ scale: 1 }}
                           transition={{ delay: 0.2 }}
                           className="text-white font-black text-4xl md:text-5xl drop-shadow-2xl"
-                        >
+              >
                           {formatMoney(realValue)}
                           {/* Hiển thị "+ 1 lượt quay miễn phí" ngay trên scratch card nếu là 1k hoặc 2k */}
                           {currentResult?.requiresReSpin && (realValue === 1000 || realValue === 2000) && (
@@ -673,7 +677,7 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
                     <canvas
                       ref={canvasRef}
                       className="absolute top-0 left-0 rounded-xl cursor-grab active:cursor-grabbing touch-none"
-                      style={{
+                          style={{
                         width: '100%', 
                         height: '100%',
                         maxWidth: '384px',
@@ -681,7 +685,7 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
                         // Khi reveal thì cho click xuyên + ẩn canvas
                         pointerEvents: scratchRevealed ? 'none' : 'auto',
                         opacity: scratchRevealed ? 0 : 1,
-                      }}
+                          }}
                       onMouseDown={handleMouseDown}
                       onMouseMove={handleMouseMove}
                       onMouseUp={handleMouseUp}
@@ -705,21 +709,21 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
                   
                   {scratchProgress > 0 && !scratchRevealed && (
                     <div className="mt-2 bg-gray-800 rounded-full h-2 overflow-hidden">
-                      <motion.div
+              <motion.div
                         className="bg-yellow-400 h-full"
                         initial={{ width: 0 }}
                         animate={{ width: `${scratchProgress}%` }}
                         transition={{ duration: 0.3 }}
                       />
                   </div>
-                  )}
-                  
+                )}
+
                   {scratchRevealed && (
-                    <motion.div
+                  <motion.div
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       className="mt-4 text-center"
-                    >
+                  >
                       {currentResult?.requiresReSpin ? (
                         <>
                           <p className="text-yellow-400 text-xl font-black mb-2">
@@ -734,14 +738,14 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
                           </p>
 
                           {countdown > 0 ? (
-                            <motion.p
+                <motion.p
                               key={countdown}
                               initial={{ scale: 1.25 }}
                               animate={{ scale: 1 }}
                               className="text-white text-2xl font-black mt-2"
-                            >
+                >
                               Mở quay tiếp sau: {countdown}s
-                            </motion.p>
+                </motion.p>
                           ) : (
                             <motion.button
                               onClick={async () => {
@@ -769,7 +773,7 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
                             <motion.p
                               key={countdown}
                               initial={{ scale: 1.5 }}
-                              animate={{ scale: 1 }}
+                    animate={{ scale: 1 }}
                               className="text-white text-2xl font-black"
                             >
                               Tiếp tục sau: {countdown}s
@@ -779,9 +783,9 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
                       )}
                     </motion.div>
                   )}
-                </div>
-              </motion.div>
-            )}
+                    </div>
+                  </motion.div>
+                )}
             
 
           </AnimatePresence>
@@ -799,7 +803,7 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
           <div className="flex flex-col items-center gap-2 mt-2">
             {!isSharedMode && (
               <>
-                <a
+          <a
                   href="/admin"
                   onClick={(e) => {
                     e.preventDefault();
@@ -807,9 +811,9 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
                     window.dispatchEvent(new PopStateEvent('popstate'));
                   }}
                   className="text-white/30 hover:text-white/60 text-sm transition-colors"
-                >
-                  🔐 Admin Access
-                </a>
+          >
+            🔐 Admin Access
+          </a>
                 <button
                   onClick={async () => {
                     await signOut();
