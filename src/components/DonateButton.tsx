@@ -1,6 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { QRCodeSVG } from 'qrcode.react';
 import { Heart, X, Copy, Check } from 'lucide-react';
 
 // Thông tin chuyển khoản
@@ -11,17 +10,49 @@ const BANK_INFO = {
   bankCode: 'TCB',
 };
 
-// Tạo nội dung QR code theo chuẩn VietQR
-const generateVietQRContent = () => {
-  // Sử dụng URL VietQR để tạo QR code chuẩn
-  // Format: https://vietqr.io/transfer/{bankCode}/{accountNumber}
+// VietQR image endpoint (ổn định, không bị 404 như /transfer)
+// Format phổ biến: https://img.vietqr.io/image/{BANKCODE}-{ACCOUNT}-compact2.png?accountName=...&addInfo=...
+const getVietQRImageUrl = () => {
   const accountNumber = BANK_INFO.accountNumber.replace(/\s/g, '');
-  return `https://vietqr.io/transfer/${BANK_INFO.bankCode}/${accountNumber}`;
+  const accountName = encodeURIComponent(BANK_INFO.name);
+  const addInfo = encodeURIComponent('Donate cho nhà phát triển hệ thống');
+  return `https://img.vietqr.io/image/${BANK_INFO.bankCode}-${accountNumber}-compact2.png?accountName=${accountName}&addInfo=${addInfo}`;
 };
 
-export const DonateButton = () => {
-  const [isOpen, setIsOpen] = useState(false);
+type DonateButtonProps = {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideFloatingButton?: boolean;
+  onConfirmed?: () => void;
+};
+
+export const DonateButton: React.FC<DonateButtonProps> = ({
+  open,
+  onOpenChange,
+  hideFloatingButton = false,
+  onConfirmed,
+}) => {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const [showThanks, setShowThanks] = useState(false);
+
+  const isOpen = open ?? uncontrolledOpen;
+  const setOpen = (next: boolean) => {
+    onOpenChange?.(next);
+    if (open === undefined) setUncontrolledOpen(next);
+  };
+
+  const qrImgUrl = useMemo(() => getVietQRImageUrl(), []);
+
+  // Reset UI states whenever modal is opened
+  useEffect(() => {
+    if (isOpen) {
+      setCopied(false);
+      setConfirmed(false);
+      setShowThanks(false);
+    }
+  }, [isOpen]);
 
   const copyAccountNumber = async () => {
     try {
@@ -39,84 +70,68 @@ export const DonateButton = () => {
         document.body.removeChild(textArea);
       }
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setCopied(false), 3000);
     } catch (err) {
       console.error('Failed to copy:', err);
     }
   };
 
-  const openBankApp = () => {
-    // Deep link cho các app ngân hàng phổ biến ở Việt Nam
-    const accountNumber = BANK_INFO.accountNumber.replace(/\s/g, '');
-    
-    // VietQR universal link - hoạt động tốt trên cả mobile và web
-    const vietqrUrl = `https://vietqr.io/transfer/${BANK_INFO.bankCode}/${accountNumber}`;
-    
-    // Techcombank app deep link (cho mobile)
-    const techcombankUrl = `techcombank://transfer?account=${accountNumber}&bank=${BANK_INFO.bankCode}`;
-    
-    // Kiểm tra nếu là mobile
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    
-    if (isMobile) {
-      // Thử mở app Techcombank trước
-      const link = document.createElement('a');
-      link.href = techcombankUrl;
-      link.target = '_blank';
-      link.click();
-      
-      // Fallback sau 500ms nếu app không mở được
-      setTimeout(() => {
-        window.open(vietqrUrl, '_blank');
-      }, 500);
-    } else {
-      // Trên web, mở VietQR
-      window.open(vietqrUrl, '_blank');
-    }
+  const confirmTransferred = () => {
+    setConfirmed(true);
+    setShowThanks(true);
+    onConfirmed?.();
+
+    // Auto-close nhẹ nhàng sau khi hiện popup cảm ơn
+    setTimeout(() => {
+      setShowThanks(false);
+      setOpen(false);
+    }, 2200);
   };
 
   return (
     <>
       {/* Button ở góc trái màn hình - Nhấp nháy thu hút */}
-      <motion.button
-        onClick={() => setIsOpen(true)}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        animate={{
-          boxShadow: [
-            '0 0 0px rgba(236, 72, 153, 0.7)',
-            '0 0 20px rgba(236, 72, 153, 0.9)',
-            '0 0 30px rgba(236, 72, 153, 1)',
-            '0 0 20px rgba(236, 72, 153, 0.9)',
-            '0 0 0px rgba(236, 72, 153, 0.7)',
-          ],
-          scale: [1, 1.05, 1, 1.05, 1],
-        }}
-        transition={{
-          duration: 2,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        }}
-        className="fixed bottom-24 sm:bottom-4 left-2 sm:left-4 z-20 bg-gradient-to-r from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 text-white px-2.5 py-1.5 sm:px-4 sm:py-3 rounded-full shadow-2xl flex items-center gap-1.5 sm:gap-2 transition-all border-2 border-white/30 backdrop-blur-sm max-w-[calc(100vw-1rem)]"
-        aria-label="Donate cho nhà phát triển"
-      >
-        <motion.div
+      {!hideFloatingButton && (
+        <motion.button
+          onClick={() => setOpen(true)}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
           animate={{
-            scale: [1, 1.2, 1],
+            boxShadow: [
+              '0 0 0px rgba(236, 72, 153, 0.7)',
+              '0 0 20px rgba(236, 72, 153, 0.9)',
+              '0 0 30px rgba(236, 72, 153, 1)',
+              '0 0 20px rgba(236, 72, 153, 0.9)',
+              '0 0 0px rgba(236, 72, 153, 0.7)',
+            ],
+            scale: [1, 1.05, 1, 1.05, 1],
           }}
           transition={{
-            duration: 1.5,
+            duration: 2,
             repeat: Infinity,
             ease: 'easeInOut',
           }}
+          className="fixed bottom-24 sm:bottom-4 left-2 sm:left-4 z-20 bg-gradient-to-r from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600 text-white px-2.5 py-1.5 sm:px-4 sm:py-3 rounded-full shadow-2xl flex items-center gap-1.5 sm:gap-2 transition-all border-2 border-white/30 backdrop-blur-sm max-w-[calc(100vw-1rem)]"
+          aria-label="Donate cho nhà phát triển"
         >
-          <Heart className="w-3.5 h-3.5 sm:w-5 sm:h-5 flex-shrink-0" fill="currentColor" />
-        </motion.div>
-        <span className="font-bold text-[11px] sm:text-sm whitespace-nowrap">
-          <span className="hidden sm:inline">Donate cho nhà phát triển</span>
-          <span className="sm:hidden">Donate</span>
-        </span>
-      </motion.button>
+          <motion.div
+            animate={{
+              scale: [1, 1.2, 1],
+            }}
+            transition={{
+              duration: 1.5,
+              repeat: Infinity,
+              ease: 'easeInOut',
+            }}
+          >
+            <Heart className="w-3.5 h-3.5 sm:w-5 sm:h-5 flex-shrink-0" fill="currentColor" />
+          </motion.div>
+          <span className="font-bold text-[11px] sm:text-sm whitespace-nowrap">
+            <span className="hidden sm:inline">Donate cho nhà phát triển</span>
+            <span className="sm:hidden">Donate</span>
+          </span>
+        </motion.button>
+      )}
 
       {/* Modal/Popup */}
       <AnimatePresence>
@@ -127,7 +142,7 @@ export const DonateButton = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setIsOpen(false)}
+              onClick={() => setOpen(false)}
               className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
             >
               {/* Modal Content */}
@@ -140,7 +155,7 @@ export const DonateButton = () => {
               >
                 {/* Close Button */}
                 <button
-                  onClick={() => setIsOpen(false)}
+                  onClick={() => setOpen(false)}
                   className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
                   aria-label="Đóng"
                 >
@@ -154,7 +169,7 @@ export const DonateButton = () => {
                     Ủng hộ phát triển hệ thống
                   </h2>
                   <p className="text-gray-600 text-sm">
-                    Cảm ơn bạn đã ủng hộ! 💝
+                    Quét QR để chuyển khoản, sau đó bấm “Xác nhận đã chuyển khoản”. 💝
                   </p>
                 </div>
 
@@ -182,11 +197,11 @@ export const DonateButton = () => {
 
                   {/* QR Code */}
                   <div className="bg-white rounded-lg p-4 flex justify-center mb-4">
-                    <QRCodeSVG
-                      value={generateVietQRContent()}
-                      size={200}
-                      level="H"
-                      includeMargin={true}
+                    <img
+                      src={qrImgUrl}
+                      alt={`VietQR ${BANK_INFO.bankCode} ${BANK_INFO.accountNumber}`}
+                      className="w-[220px] h-auto"
+                      loading="lazy"
                     />
                   </div>
 
@@ -203,27 +218,15 @@ export const DonateButton = () => {
 
                 {/* Action Buttons */}
                 <div className="flex flex-col gap-2">
-                  {/* Mobile: Mở app ngân hàng */}
-                  <motion.button
-                    onClick={openBankApp}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    className="w-full bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white font-bold py-3 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
-                  >
-                    <span>Chuyển khoản ngay</span>
-                    <Heart className="w-5 h-5" fill="currentColor" />
-                  </motion.button>
-
-                  {/* Copy Account Number */}
                   <motion.button
                     onClick={copyAccountNumber}
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
-                    className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2 rounded-xl transition-all flex items-center justify-center gap-2"
+                    className="w-full bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white font-bold py-3 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
                   >
                     {copied ? (
                       <>
-                        <Check className="w-5 h-5 text-green-500" />
+                        <Check className="w-5 h-5 text-white" />
                         <span>Đã sao chép!</span>
                       </>
                     ) : (
@@ -233,12 +236,61 @@ export const DonateButton = () => {
                       </>
                     )}
                   </motion.button>
+
+                  <motion.button
+                    onClick={confirmTransferred}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className={`w-full font-bold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 border-2 ${
+                      confirmed
+                        ? 'bg-green-600 border-green-700 text-white'
+                        : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-800'
+                    }`}
+                  >
+                    {confirmed ? (
+                      <>
+                        <Check className="w-5 h-5" />
+                        <span>Đã xác nhận - Cảm ơn bạn!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-5 h-5" />
+                        <span>Xác nhận đã chuyển khoản</span>
+                      </>
+                    )}
+                  </motion.button>
                 </div>
 
                 {/* Footer Note */}
                 <p className="text-xs text-gray-500 text-center mt-4">
                   Quét mã QR hoặc chuyển khoản đến số tài khoản trên
                 </p>
+
+                {/* Thanks Popup */}
+                <AnimatePresence>
+                  {showThanks && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                      className="absolute inset-0 z-10 flex items-center justify-center p-4"
+                    >
+                      <div className="w-full rounded-2xl bg-black/70 backdrop-blur-md border border-white/20 p-5 text-center shadow-2xl">
+                        <div className="text-4xl mb-2">🎊</div>
+                        <p className="text-white font-black text-xl">
+                          Cảm ơn bạn đã ủng hộ!
+                        </p>
+                        <p className="text-white/90 font-semibold mt-2">
+                          Chúc bạn năm mới <span className="text-yellow-300">An Khang</span> –{' '}
+                          <span className="text-yellow-300">Thịnh Vượng</span>, vạn sự như ý! 🧧✨
+                        </p>
+                        <p className="text-white/70 text-sm mt-3">
+                          (Popup sẽ tự đóng sau vài giây)
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </motion.div>
             </motion.div>
           </>

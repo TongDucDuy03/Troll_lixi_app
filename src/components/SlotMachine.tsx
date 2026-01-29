@@ -4,8 +4,8 @@ import { useGame } from '../context/GameContext';
 import { useUser } from '../context/UserContext';
 import { useAudio, SoundToggle } from '../context/AudioContext';
 import confetti from 'canvas-confetti';
-import { Sparkles, AlertCircle, LogOut, Copy, Check } from 'lucide-react';
-import { ROLES, RoleId, ALL_DENOMINATIONS } from '../types';
+import { Sparkles, LogOut, Copy, Check } from 'lucide-react';
+import { ROLES, RoleId } from '../types';
 import { DonateButton } from './DonateButton';
 
 const getBillColor = (value: number): string => {
@@ -26,16 +26,18 @@ const getBillColor = (value: number): string => {
 export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean } = {}) => {
   const { performSpin, userName: contextUserName } = useGame();
   const { signOut, user } = useUser();
-  const { play, playLoop, stop, stopLoop, unlock } = useAudio();
+  const { play, playLoop, stopLoop, unlock } = useAudio();
+  const [donateOpen, setDonateOpen] = useState(false);
+  const [showDonateSuggest, setShowDonateSuggest] = useState(false);
   const [userName, setUserName] = useState('');
   const [selectedRole, setSelectedRole] = useState<RoleId | ''>('');
   const [isSpinning, setIsSpinning] = useState(false);
   const [currentPhase, setCurrentPhase] = useState<'idle' | 'spinning' | 'result' | 'troll' | 'final' | 'respin_spinning'>('idle');
-  const [displayValue, setDisplayValue] = useState<number>(0);
+  const [, setDisplayValue] = useState<number>(0);
   const [realValue, setRealValue] = useState<number>(0);
-  const [scenario, setScenario] = useState<string>('');
-  const [reSpinFirstPrize, setReSpinFirstPrize] = useState<number>(0);
-  const [reSpinFinalPrize, setReSpinFinalPrize] = useState<number>(0);
+  const [, setScenario] = useState<string>('');
+  const [, setReSpinFirstPrize] = useState<number>(0);
+  const [] = useState<number>(0);
   const [scratchProgress, setScratchProgress] = useState(0);
   const [isScratching, setIsScratching] = useState(false);
   const [scratchRevealed, setScratchRevealed] = useState(false);
@@ -46,6 +48,16 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
   const [shareLink, setShareLink] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const donateConfirmedKey = user?.id ? `donate_confirmed_${user.id}` : null;
+
+  // Gợi ý donate sau khi đăng nhập (mỗi lần vào web đều hiện)
+  useEffect(() => {
+    if (!isSharedMode && user) {
+      const confirmed = donateConfirmedKey ? localStorage.getItem(donateConfirmedKey) === '1' : false;
+      if (!confirmed) setShowDonateSuggest(true);
+    }
+  }, [isSharedMode, user, donateConfirmedKey]);
 
   const copyToClipboard = async (text: string) => {
     // Preferred modern API (only works in secure contexts + allowed permissions)
@@ -175,7 +187,7 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
 
 
   // Scratch Card logic - vẽ lớp phủ ngay lập tức
-  const initScratchCard = (targetValue: number) => {
+  const initScratchCard = (_targetValue: number) => {
     setScratchProgress(0);
     setScratchRevealed(false);
     
@@ -448,7 +460,73 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
       </div>
 
       {/* Donate Button - Bottom Left */}
-      <DonateButton />
+      <DonateButton
+        open={donateOpen}
+        onOpenChange={setDonateOpen}
+        onConfirmed={() => {
+          if (donateConfirmedKey) {
+            localStorage.setItem(donateConfirmedKey, '1');
+          }
+          setShowDonateSuggest(false);
+        }}
+      />
+
+      {/* Donate Suggest Popup (after login) */}
+      <AnimatePresence>
+        {showDonateSuggest && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            onClick={() => setShowDonateSuggest(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 16, scale: 0.98 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 22 }}
+              className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-5 border border-white/20"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-pink-500 to-red-500 text-white flex items-center justify-center font-black text-xl">
+                  💝
+                </div>
+                <div className="flex-1">
+                  <p className="text-gray-900 font-black text-lg leading-snug">
+                    Lì xì dev một chút nhé?
+                  </p>
+                  <p className="text-gray-700 text-sm mt-1 leading-relaxed">
+                    Nếu bạn thấy app hữu ích, bạn có thể donate để ủng hộ duy trì & nâng cấp hệ thống.
+                    Chúc bạn năm mới an khang – thịnh vượng! 🧧
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <motion.button
+                  whileTap={{ scale: 0.98 }}
+                  className="w-full py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold transition"
+                  onClick={() => setShowDonateSuggest(false)}
+                >
+                  Đóng
+                </motion.button>
+                <motion.button
+                  whileTap={{ scale: 0.98 }}
+                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white font-black shadow-lg transition"
+                  onClick={() => {
+                    setShowDonateSuggest(false);
+                    setDonateOpen(true);
+                  }}
+                >
+                  Donate
+                </motion.button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="absolute inset-0 opacity-10">
         {Array.from({ length: 20 }).map((_, i) => (

@@ -23,7 +23,7 @@ export const AdminPanel = () => {
     resetAllData,
   } = useGame();
 
-  // Helper để kiểm tra xem có thể apply troll/force mode không
+  // Helper để kiểm tra xem có thể apply rigging mode không
   // Kiểm tra: mệnh giá có trong inventory, có initial_quantity > 0, còn tờ (remaining > 0), và có đủ budget
   const canApplyRigging = (targetValue: number, roleId?: RoleId) => {
     if (!roleId) return false;
@@ -61,10 +61,8 @@ export const AdminPanel = () => {
   const [error, setError] = useState('');
   const [mainTab, setMainTab] = useState<'budget' | 'rigging'>('budget');
   const [selectedRoleTab, setSelectedRoleTab] = useState<RoleId>('kids');
-  const [riggingTab, setRiggingTab] = useState<'honest' | 'force' | 'troll'>('honest');
+  const [riggingTab, setRiggingTab] = useState<'honest' | 'force'>('honest');
   const [forceValue, setForceValue] = useState(20000);
-  const [trollFake, setTrollFake] = useState(500000);
-  const [trollReal, setTrollReal] = useState(20000);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,10 +73,6 @@ export const AdminPanel = () => {
       setError('Sai mật khẩu rồi boss!');
       setPin('');
     }
-  };
-
-  const formatMoney = (value: number) => {
-    return `${(value / 1000).toFixed(0)}k`;
   };
 
   const formatFullMoney = (value: number | undefined | null) => {
@@ -126,41 +120,6 @@ export const AdminPanel = () => {
       }
       await setRiggingMode('force_value', forceValue);
       alert(`Người tiếp theo SẼ NHẬN ${formatFullMoney(forceValue)}! 🎯\n\n(Lưu ý: Force mode đã được lưu và sẽ hoạt động trên tất cả tabs/devices cùng tài khoản)`);
-    } else if (riggingTab === 'troll') {
-      // Kiểm tra tất cả roles xem có role nào có thể apply troll không
-      const canApply = ROLES.some(role => canApplyRigging(trollReal, role.id));
-      if (!canApply) {
-        // Kiểm tra chi tiết để đưa ra cảnh báo cụ thể
-        const denomInfo = getDenominationInfo(trollReal);
-        const rolesWithZero = Object.entries(denomInfo)
-          .filter(([_, info]) => info.remaining === 0)
-          .map(([_, info]) => info.roleName);
-        
-        let message = `⚠️ Cảnh báo: Không thể apply TROLL MODE!\n\n`;
-        message += `Mệnh giá thật: ${formatFullMoney(trollReal)}\n\n`;
-        
-        if (rolesWithZero.length > 0) {
-          message += `❌ Mệnh giá này đã HẾT ở các role:\n${rolesWithZero.map(name => `   - ${name}`).join('\n')}\n\n`;
-        }
-        
-        const hasRole = Object.keys(denomInfo).length > 0;
-        if (!hasRole) {
-          message += `❌ Mệnh giá này không có trong inventory của bất kỳ role nào\n\n`;
-        } else {
-          const rolesWithBudget = Object.entries(denomInfo)
-            .filter(([_, info]) => info.remaining > 0)
-            .map(([_, info]) => info.roleName);
-          if (rolesWithBudget.length === 0) {
-            message += `❌ Tất cả các role đều đã hết mệnh giá này\n\n`;
-          }
-        }
-        
-        message += `Vui lòng kiểm tra lại budget và inventory!`;
-        alert(message);
-        return;
-      }
-      await setRiggingMode('troll_fake_high_to_low', trollReal, trollFake);
-      alert(`TROLL MODE: Hiện ${formatFullMoney(trollFake)} ➜ Thật ra ${formatFullMoney(trollReal)}! 😈\n\n(Lưu ý: Troll mode đã được lưu và sẽ hoạt động trên tất cả tabs/devices cùng tài khoản)`);
     }
   };
 
@@ -191,7 +150,7 @@ export const AdminPanel = () => {
             ADMIN PANEL
           </h1>
           <p className="text-gray-400 text-center mb-6">
-            Cổng Chế Troll Bí Mật
+            Bảng điều khiển quản trị
           </p>
           <form onSubmit={handleLogin}>
             <input
@@ -411,7 +370,24 @@ export const AdminPanel = () => {
             </div>
 
             <button
-                    onClick={() => resetRoleInventory(selectedRoleTab)}
+              onClick={() => {
+                const roleName =
+                  ROLES.find((r) => r.id === selectedRoleTab)?.name || selectedRoleTab;
+                const hasSpinHistoryForRole = state.spinHistory.some(
+                  (log) => log.role_id === selectedRoleTab
+                );
+
+                // Chỉ cho reset khi CHƯA có lượt quay nào (chỉ mới nhập số lượng)
+                if (hasSpinHistoryForRole) {
+                  alert(
+                    `Không thể reset ${roleName} vì đã có lịch sử quay.\n\nNếu muốn reset, vui lòng dùng nút "Reset Tất Cả" ở phía trên.`
+                  );
+                  return;
+                }
+
+                resetRoleInventory(selectedRoleTab);
+                alert(`✅ Đã reset ${roleName} về trạng thái ban đầu.`);
+              }}
               className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
             >
               <RefreshCw className="w-5 h-5" />
@@ -525,7 +501,7 @@ export const AdminPanel = () => {
             </p>
 
             <div className="flex gap-2 mb-4">
-              {(['honest', 'force', 'troll'] as const).map((tab) => (
+              {(['honest', 'force'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setRiggingTab(tab)}
@@ -537,7 +513,6 @@ export const AdminPanel = () => {
                 >
                   {tab === 'honest' && '😇 Honest'}
                   {tab === 'force' && '🎯 Force'}
-                  {tab === 'troll' && '😈 Troll'}
                 </button>
               ))}
             </div>
@@ -584,49 +559,6 @@ export const AdminPanel = () => {
                 </motion.div>
               )}
 
-              {riggingTab === 'troll' && (
-                <motion.div
-                  key="troll"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="bg-gray-900/50 rounded-lg p-4 space-y-3"
-                >
-                  <div>
-                    <p className="text-purple-400 text-sm mb-2">
-                      🎭 FAKE: Show this at first:
-                    </p>
-                    <select
-                      value={trollFake}
-                      onChange={(e) => setTrollFake(Number(e.target.value))}
-                      className="w-full bg-gray-800 border-2 border-purple-500 text-white rounded-lg px-4 py-2 font-bold"
-                    >
-                        {ALL_DENOMINATIONS.map((value) => (
-                          <option key={value} value={value}>
-                            {formatFullMoney(value)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="text-center text-red-400 font-bold text-2xl">⬇️</div>
-                  <div>
-                    <p className="text-red-400 text-sm mb-2">
-                      💀 REAL: Actually give them:
-                    </p>
-                    <select
-                      value={trollReal}
-                      onChange={(e) => setTrollReal(Number(e.target.value))}
-                      className="w-full bg-gray-800 border-2 border-red-500 text-white rounded-lg px-4 py-2 font-bold"
-                    >
-                        {ALL_DENOMINATIONS.map((value) => (
-                          <option key={value} value={value}>
-                            {formatFullMoney(value)}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                </motion.div>
-              )}
             </AnimatePresence>
 
             <button
@@ -643,7 +575,7 @@ export const AdminPanel = () => {
                     ? '😇 Honest Random'
                     : state.riggingConfig.next_spin_mode === 'force_value'
                     ? '🎯 Forced Value'
-                    : '😈 Troll Mode'}
+                    : '🤫 Hidden'}
               </p>
             </div>
           </motion.div>
