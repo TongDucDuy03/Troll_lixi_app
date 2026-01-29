@@ -7,6 +7,7 @@ import confetti from 'canvas-confetti';
 import { Sparkles, LogOut, Copy, Check } from 'lucide-react';
 import { ROLES, RoleId } from '../types';
 import { DonateButton } from './DonateButton';
+import { HelpButton } from './HelpButton';
 
 const getBillColor = (value: number): string => {
   const colors: { [key: number]: string } = {
@@ -454,8 +455,9 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-700 via-red-800 to-red-900 flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      {/* Sound Toggle - Top Right */}
-      <div className="absolute top-[calc(env(safe-area-inset-top,0px)+0.5rem)] right-2 sm:top-4 sm:right-4 z-20">
+      {/* Top Right Controls (HDSD + Sound) */}
+      <div className="absolute top-[calc(env(safe-area-inset-top,0px)+0.5rem)] right-2 sm:top-4 sm:right-4 z-20 flex items-center gap-2">
+        <HelpButton isSharedMode={isSharedMode} />
         <SoundToggle className="px-2.5 py-2 sm:px-4 sm:py-2" />
       </div>
 
