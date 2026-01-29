@@ -49,6 +49,8 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
   const [shareLink, setShareLink] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const confettiCanvasRef = useRef<HTMLCanvasElement>(null);
+  const confettiInstanceRef = useRef<ReturnType<typeof confetti.create> | null>(null);
 
   const donateConfirmedKey = user?.id ? `donate_confirmed_${user.id}` : null;
 
@@ -150,7 +152,8 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
 
     const config = configs[intensity];
 
-    confetti({
+    const shoot = confettiInstanceRef.current || confetti;
+    shoot({
       ...config,
       origin: { y: 0.6 },
       colors: ['#FFD700', '#FF0000', '#FFFF00', '#FFA500'],
@@ -158,14 +161,14 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
 
     if (intensity === 'high') {
       setTimeout(() => {
-        confetti({
+        shoot({
           ...config,
           origin: { y: 0.6 },
           angle: 60,
         });
       }, 100);
       setTimeout(() => {
-        confetti({
+        shoot({
           ...config,
           origin: { y: 0.6 },
           angle: 120,
@@ -173,6 +176,13 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
       }, 200);
     }
   };
+
+  // Use our own confetti canvas so it never blocks clicks
+  useEffect(() => {
+    const canvas = confettiCanvasRef.current;
+    if (!canvas) return;
+    confettiInstanceRef.current = confetti.create(canvas, { resize: true, useWorker: true });
+  }, []);
 
   // Reset tất cả state scratch card
   const resetScratchCardState = () => {
@@ -329,15 +339,15 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
           clearInterval(interval);
           // Xử lý kết quả sau delay
           if (currentResult?.requiresReSpin) {
-            // Chỉ đánh dấu "được phép bấm" bằng countdown = 0
+            // Cho phép bấm QUAY TIẾP: countdown = 0 (giữ nguyên isSpinning để giữ UI scratch card)
             setReSpinFirstPrize(currentResult.realValue);
             setCountdown(0);
             // Giữ nguyên màn scratch card để hiện nút QUAY TIẾP
           } else {
             // Không hiển thị màn hình kết quả, chỉ reset về idle sau countdown
-    setTimeout(() => {
-      setIsSpinning(false);
-      setCurrentPhase('idle');
+            setTimeout(() => {
+              setIsSpinning(false);
+              setCurrentPhase('idle');
               resetScratchCardState();
             }, 500);
           }
@@ -388,7 +398,8 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
 
   const handleSpin = async (isReSpin: boolean = false) => {
     // Prevent multiple simultaneous spins
-    if (isSpinning) {
+    // Cho phép re-spin ngay cả khi isSpinning đang true (vì UI scratch card vẫn đang hiển thị)
+    if (isSpinning && !isReSpin) {
       return;
     }
 
@@ -455,6 +466,8 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-700 via-red-800 to-red-900 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+      {/* Confetti canvas (always pointer-events-none so it can't block buttons) */}
+      <canvas ref={confettiCanvasRef} className="fixed inset-0 z-30 pointer-events-none" />
       {/* Top Right Controls (HDSD + Sound) */}
       <div className="absolute top-[calc(env(safe-area-inset-top,0px)+0.5rem)] right-2 sm:top-4 sm:right-4 z-20 flex items-center gap-2">
         <HelpButton isSharedMode={isSharedMode} />
@@ -530,11 +543,12 @@ export const SlotMachine = ({ isSharedMode = false }: { isSharedMode?: boolean }
         )}
       </AnimatePresence>
 
-      <div className="absolute inset-0 opacity-10">
+      {/* Decorative falling icons - must NOT block clicks */}
+      <div className="absolute inset-0 opacity-10 pointer-events-none select-none">
         {Array.from({ length: 20 }).map((_, i) => (
           <motion.div
             key={i}
-            className="absolute text-6xl"
+            className="absolute text-6xl pointer-events-none select-none"
             initial={{ x: Math.random() * window.innerWidth, y: -100 }}
             animate={{
               y: window.innerHeight + 100,
